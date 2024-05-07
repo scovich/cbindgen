@@ -28,6 +28,10 @@ cdef extern from *:
   const TransparentPrimitiveWithAssociatedConstants TransparentPrimitiveWithAssociatedConstants_ZERO # = 0
   const TransparentPrimitiveWithAssociatedConstants TransparentPrimitiveWithAssociatedConstants_ONE # = 1
 
+  ctypedef const uint32_t *TransparentPointerWrappingStructure;
+
+  ctypedef uint32_t *TransparentNonNullPointerWrappingStructure;
+
   const TransparentPrimitiveWrappingStructure EnumWithAssociatedConstantInImpl_TEN # = 10
 
   void root(TransparentComplexWrappingStructTuple a,
@@ -37,4 +41,6 @@ cdef extern from *:
             TransparentComplexWrapper_i32 e,
             TransparentPrimitiveWrapper_i32 f,
             TransparentPrimitiveWithAssociatedConstants g,
-            EnumWithAssociatedConstantInImpl h);
+            EnumWithAssociatedConstantInImpl h,
+            TransparentPointerWrappingStructure i,
+            TransparentNonNullPointerWrappingStructure j);

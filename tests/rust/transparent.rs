@@ -16,6 +16,14 @@ struct TransparentComplexWrappingStructure { only_field: DummyStruct }
 #[repr(transparent)]
 struct TransparentPrimitiveWrappingStructure { only_field: u32 }
 
+// Transparent structure wrapping a pointer
+#[repr(transparent)]
+struct TransparentPointerWrappingStructure { only_field: *const u32 }
+
+// Transparent structure wrapping a non-null pointer
+#[repr(transparent)]
+struct TransparentNonNullPointerWrappingStructure { only_field: NonNull<u32> }
+
 // Transparent struct wrapper with a marker wrapping a struct.
 #[repr(transparent)]
 struct TransparentComplexWrapper<T> {
@@ -64,4 +72,6 @@ pub extern "C" fn root(
     f: TransparentPrimitiveWrapper<i32>,
     g: TransparentPrimitiveWithAssociatedConstants,
     h: EnumWithAssociatedConstantInImpl,
+    i: TransparentPointerWrappingStructure,
+    j: TransparentNonNullPointerWrappingStructure,
 ) { }

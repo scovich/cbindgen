@@ -23,6 +23,10 @@ typedef uint32_t TransparentPrimitiveWithAssociatedConstants;
 #define TransparentPrimitiveWithAssociatedConstants_ZERO 0
 #define TransparentPrimitiveWithAssociatedConstants_ONE 1
 
+typedef const uint32_t *TransparentPointerWrappingStructure;
+
+typedef uint32_t *TransparentNonNullPointerWrappingStructure;
+
 #define EnumWithAssociatedConstantInImpl_TEN 10
 
 void root(TransparentComplexWrappingStructTuple a,
@@ -32,4 +36,6 @@ void root(TransparentComplexWrappingStructTuple a,
           TransparentComplexWrapper_i32 e,
           TransparentPrimitiveWrapper_i32 f,
           TransparentPrimitiveWithAssociatedConstants g,
-          struct EnumWithAssociatedConstantInImpl h);
+          struct EnumWithAssociatedConstantInImpl h,
+          TransparentPointerWrappingStructure i,
+          TransparentNonNullPointerWrappingStructure j);
