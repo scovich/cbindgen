@@ -9,8 +9,8 @@ use crate::bindgen::config::Config;
 use crate::bindgen::declarationtyperesolver::DeclarationTypeResolver;
 use crate::bindgen::dependencies::Dependencies;
 use crate::bindgen::ir::{
-    AnnotationSet, Cfg, Constant, Enum, GenericArgument, OpaqueItem, Path, Static, Struct, Typedef,
-    Union,
+    AnnotationSet, Cfg, Constant, Enum, GenericArgument, KnownErasedTypes, OpaqueItem, Path,
+    Static, Struct, Typedef, Union,
 };
 use crate::bindgen::library::Library;
 use crate::bindgen::monomorph::Monomorphs;
@@ -36,6 +36,18 @@ pub trait Item {
     fn resolve_declaration_types(&mut self, _resolver: &DeclarationTypeResolver) {
         unimplemented!()
     }
+
+    /// Erases all types internal to this item. Type erasure impacts typedefs and/or
+    /// `#[repr(transparent)]` types that were annotated with `cbindgen:erase_type`. It also impacts
+    /// certain built-in types (such as `Pin`, `NonNull`, `Box`)..
+    fn erase_types_inplace(
+        &mut self,
+        library: &Library,
+        erased: &mut KnownErasedTypes,
+        generics: &[GenericArgument],
+    );
+    fn is_generic(&self) -> bool;
+
     fn rename_for_config(&mut self, _config: &Config) {}
     fn add_dependencies(&self, _library: &Library, _out: &mut Dependencies) {}
     fn instantiate_monomorph(
@@ -69,6 +81,17 @@ impl ItemContainer {
             ItemContainer::Union(ref x) => x,
             ItemContainer::Enum(ref x) => x,
             ItemContainer::Typedef(ref x) => x,
+        }
+    }
+    pub fn deref_mut(&mut self) -> &mut dyn Item {
+        match *self {
+            ItemContainer::Constant(ref mut x) => x,
+            ItemContainer::Static(ref mut x) => x,
+            ItemContainer::OpaqueItem(ref mut x) => x,
+            ItemContainer::Struct(ref mut x) => x,
+            ItemContainer::Union(ref mut x) => x,
+            ItemContainer::Enum(ref mut x) => x,
+            ItemContainer::Typedef(ref mut x) => x,
         }
     }
 }

@@ -11,8 +11,8 @@ use crate::bindgen::declarationtyperesolver::DeclarationTypeResolver;
 use crate::bindgen::dependencies::Dependencies;
 use crate::bindgen::ir::{
     AnnotationSet, AnnotationValue, Cfg, ConditionWrite, DeprecatedNoteKind, Documentation, Field,
-    GenericArgument, GenericParams, GenericPath, Item, ItemContainer, Literal, Path, Repr,
-    ReprStyle, Struct, ToCondition, Type,
+    GenericArgument, GenericParams, GenericPath, Item, ItemContainer, KnownErasedTypes, Literal,
+    Path, Repr, ReprStyle, Struct, ToCondition, Type,
 };
 use crate::bindgen::language_backend::LanguageBackend;
 use crate::bindgen::library::Library;
@@ -317,8 +317,12 @@ impl Enum {
         repr.style != ReprStyle::C
     }
 
+    pub fn is_transparent(&self) -> bool {
+        self.repr.style == ReprStyle::Transparent
+    }
+
     pub fn add_monomorphs(&self, library: &Library, out: &mut Monomorphs) {
-        if self.generic_params.len() > 0 {
+        if self.is_generic() {
             return;
         }
 
@@ -489,6 +493,32 @@ impl Item for Enum {
     fn resolve_declaration_types(&mut self, resolver: &DeclarationTypeResolver) {
         for &mut ref mut var in &mut self.variants {
             var.resolve_declaration_types(resolver);
+        }
+    }
+
+    fn is_generic(&self) -> bool {
+        self.generic_params.len() > 0
+    }
+
+    fn erase_types_inplace(
+        &mut self,
+        library: &Library,
+        erased: &mut KnownErasedTypes,
+        generics: &[GenericArgument],
+    ) {
+        let inline_tag_field = Self::inline_tag_field(&self.repr);
+        let mappings = self.generic_params.call(self.path.name(), generics);
+        for variant in self.variants.iter_mut() {
+            if let VariantBody::Body { ref mut body, .. } = variant.body {
+                for (i, field) in body.fields.iter_mut().enumerate() {
+                    // Ignore the inline Tag field, if any (it's always first)
+                    if !inline_tag_field || i != 0 {
+                        erased.erase_types_inplace(library, &mut field.ty, &mappings);
+                    } else {
+                        warn!("Skipping inline Tag field {:?}", field);
+                    }
+                }
+            }
         }
     }
 

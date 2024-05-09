@@ -9,7 +9,10 @@ use syn::ext::IdentExt;
 use crate::bindgen::config::{Config, Language};
 use crate::bindgen::declarationtyperesolver::DeclarationTypeResolver;
 use crate::bindgen::dependencies::Dependencies;
-use crate::bindgen::ir::{GenericArgument, GenericParams, GenericPath, Path};
+use crate::bindgen::ir::{
+    EnumVariant, GenericArgument, GenericParams, GenericPath, Item, ItemContainer,
+    KnownErasedTypes, Path, VariantBody,
+};
 use crate::bindgen::library::Library;
 use crate::bindgen::monomorph::Monomorphs;
 use crate::bindgen::utilities::IterHelpers;
@@ -377,6 +380,47 @@ impl ConstExpr {
     }
 }
 
+/// A [Type] is a simple lexical representation of a Rust type name:
+///
+/// * `Primitive` - A primitive type, e.g. `i32`, `f64`, `bool`. These are all well-known built-in
+/// types that are directly usable without name resolution (it is assumed that nobody would ever
+/// define a type or alias with the same name).
+///
+/// * `Path` - The name of a type, possibly including generic arguments, e.g.
+/// `std::collections::HashMap<K, V>`. What type it actually refers to depends on type resolution.
+///
+/// * `Ptr` - A pointer or reference type, e.g. `*const T`, `&T`, `&mut T`, where `T` is the
+/// referenced `Type` that may require further resolution.
+///
+/// * `Array` - An array such as `[T; 4]`, where `T` is the element `Type` that may require further
+/// resolution.
+///
+/// * `FuncPtr` - A function such as `fn(a: A, b: B) -> R`, where `A`, `B`, and `R` are argument and
+/// return types that may require further resolution.
+///
+/// NOTE: Type "resolution" is quite simplistic. In particular, no attempt is made to handle the
+/// ambiguity that can arise with non fully qualified paths that refer to different types depending
+/// on context. Well-known types such as primitives and `Option` have hard-wired regardless of any
+/// type aliasing. Resolution also doesn't handle import renaming.
+///
+/// When dealing with generic types, e.g.
+/// ```
+/// struct Wrapper<T, P> {
+///     wrapped: T,
+///     _phantom: PhantomData<P>,
+/// }
+/// ```
+///
+/// The "Wrapper" path would be registered as a `Struct` whose `generic_params` are `["T", "P"]`.
+///
+/// A declaration such as `Wrapper<i32, String>` would produce a `Type::Path("Wrapper")` whose
+/// `generics` are `Type::Primitive(i32)` and `Type::Path("String")`.
+///
+/// What happens next depends on the target language. In C++, all uses of `Wrapper<i32, String>` are
+/// emitted as-is (so no resolution of the generic params types is needed). In C, the type is
+/// "monomorphized" by name mangling into a new non-generic type, which requires replacing all
+/// `Type::Path("T")` in the underlying `Struct` with `Type::Primitive(i32)` provided by the
+/// declaration.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Type {
     Ptr {
@@ -679,6 +723,182 @@ impl Type {
             }
             _ => None,
         }
+    }
+
+    #[must_use]
+    pub fn erase_types(&self, library: &Library, erased: &mut KnownErasedTypes) -> Option<Type> {
+        let should_erase_type = |item: &dyn Item| {
+            library
+                .get_config()
+                .export
+                .erase_transparent_types(item.annotations())
+        };
+        warn!("Type::erase_types for {:?}", self);
+        match *self {
+            Type::Ptr {
+                ref ty,
+                is_const,
+                is_nullable,
+                is_ref,
+            } => {
+                if let Some(erased_type) = erased.erase_types(library, ty, &[]) {
+                    return Some(Type::Ptr {
+                        ty: Box::new(erased_type),
+                        is_const,
+                        is_nullable,
+                        is_ref,
+                    });
+                }
+            }
+            Type::Path(ref path) => {
+                if let Some(ref mut items) = library.get_items(path.path()) {
+                    if let Some(ref mut item) = items.first_mut() {
+                        // First, erase the generic args themselves. This is nice for most Item
+                        // types, but crucial for `OpaqueItem` that would otherwise miss out.
+                        let erased_generics: Vec<_> = path
+                            .generics()
+                            .iter()
+                            .map(|g| match g {
+                                GenericArgument::Type(ty) => {
+                                    let erased_ty = erased.erase_types(library, ty, &[]);
+                                    erased_ty.as_ref().inspect(|e| {
+                                        warn!("*** Erased generic {:?} as {:?}", ty, e);
+                                    });
+                                    GenericArgument::Type(erased_ty.unwrap_or_else(|| ty.clone()))
+                                }
+                                other => other.clone(),
+                            })
+                            .collect();
+                        item.deref_mut()
+                            .erase_types_inplace(library, erased, &erased_generics);
+                        match item {
+                            ItemContainer::OpaqueItem(o) => {
+                                let generic = match erased_generics.first() {
+                                    Some(GenericArgument::Type(ref ty)) => ty,
+                                    _ => return None,
+                                };
+                                let language = library.get_config().language;
+                                match o.path.name() {
+                                    "Option" => {
+                                        if let Some(nullable) = generic.make_nullable() {
+                                            return Some(nullable);
+                                        }
+                                        if let Some(zeroable) = generic.make_zeroable() {
+                                            return Some(zeroable);
+                                        }
+                                    }
+                                    "NonNull" => {
+                                        return Some(Type::Ptr {
+                                            ty: Box::new(generic.clone()),
+                                            is_const: false,
+                                            is_nullable: false,
+                                            is_ref: false,
+                                        })
+                                    }
+                                    "Box" if language != Language::Cxx => {
+                                        return Some(Type::Ptr {
+                                            ty: Box::new(generic.clone()),
+                                            is_const: false,
+                                            is_nullable: false,
+                                            is_ref: false,
+                                        })
+                                    }
+                                    "Cell" => return Some(generic.clone()),
+                                    "ManuallyDrop" | "MaybeUninit" | "Pin"
+                                        if language != Language::Cxx =>
+                                    {
+                                        return Some(generic.clone())
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            ItemContainer::Struct(s)
+                                if s.is_transparent && should_erase_type(s) =>
+                            {
+                                // A `#[repr(transparent)]` struct with 2+ NZT fields fails to
+                                // compile, but 0 fields is allowed for some strange reason.
+                                if let Some(field) = s.fields.first() {
+                                    warn!(
+                                        "Erasing transparent struct {:?} as {:?}",
+                                        s.path, field.ty
+                                    );
+                                    return Some(field.ty.clone());
+                                } else {
+                                    warn!("Cannot erase empty transparent struct {:?}", s.path);
+                                }
+                            }
+                            ItemContainer::Enum(ref mut e)
+                                if e.is_transparent() && should_erase_type(e) =>
+                            {
+                                // A `#[repr(transparent)]` enum fails to compile unless it has
+                                // exactly one NZT variant.
+                                if let Some(EnumVariant {
+                                    body: VariantBody::Body { ref body, .. },
+                                    ..
+                                }) = e.variants.first()
+                                {
+                                    // NOTE: Inline tagged enum has the tag field first, ignore it.
+                                    if let Some(ref field) = body.fields.last() {
+                                        let erased_ty = field.ty.clone();
+                                        warn!(
+                                            "Erasing transparent enum {:?} as {:?}",
+                                            e.path, erased_ty
+                                        );
+                                        return Some(erased_ty);
+                                    }
+                                }
+                            }
+                            ItemContainer::Typedef(ref mut t) if should_erase_type(t) => {
+                                warn!("Erasing typedef {:?} as {:?}", t.path, t.aliased);
+                                return Some(t.aliased.clone());
+                            }
+                            _ => {}
+                        }
+                    }
+                } else {
+                    warn!("*** No items for {:?}", path);
+                }
+            }
+            Type::Primitive(..) => {} // cannot simplify further
+            Type::Array(ref ty, ref constexpr) => {
+                if let Some(erased_ty) = erased.erase_types(library, ty, &[]) {
+                    return Some(Type::Array(Box::new(erased_ty), constexpr.clone()));
+                }
+            }
+            Type::FuncPtr {
+                ref ret,
+                ref args,
+                is_nullable,
+                never_return,
+            } => {
+                let mut num_erased = 1 + args.len();
+                let erased_ret = erased.erase_types(library, ret, &[]).unwrap_or_else(|| {
+                    num_erased -= 1;
+                    ret.as_ref().clone()
+                });
+
+                let erased_args = args
+                    .iter()
+                    .map(|(name, ty)| {
+                        let erased_ty = erased.erase_types(library, ty, &[]).unwrap_or_else(|| {
+                            num_erased -= 1;
+                            ty.clone()
+                        });
+                        (name.clone(), erased_ty)
+                    })
+                    .collect();
+
+                if num_erased > 0 {
+                    return Some(Type::FuncPtr {
+                        ret: Box::new(erased_ret),
+                        args: erased_args,
+                        is_nullable,
+                        never_return,
+                    });
+                }
+            }
+        }
+        None
     }
 
     pub fn simplify_standard_types(&mut self, config: &Config) {

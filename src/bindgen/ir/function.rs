@@ -9,7 +9,9 @@ use syn::ext::IdentExt;
 use crate::bindgen::config::{Config, Language};
 use crate::bindgen::declarationtyperesolver::DeclarationTypeResolver;
 use crate::bindgen::dependencies::Dependencies;
-use crate::bindgen::ir::{AnnotationSet, Cfg, Documentation, GenericPath, Path, Type};
+use crate::bindgen::ir::{
+    AnnotationSet, Cfg, Documentation, GenericPath, KnownErasedTypes, Path, Type,
+};
 use crate::bindgen::library::Library;
 use crate::bindgen::monomorph::Monomorphs;
 use crate::bindgen::rename::{IdentifierType, RenameRule};
@@ -47,6 +49,14 @@ impl Function {
         attrs: &[syn::Attribute],
         mod_cfg: Option<&Cfg>,
     ) -> Result<Function, String> {
+        let is_generic = |param: &syn::GenericParam| match param {
+            syn::GenericParam::Lifetime(_) => false, // lifetimes are ok
+            _ => true,
+        };
+        if sig.generics.params.iter().any(is_generic) {
+            return Err("Generic functions are not supported".to_owned());
+        }
+
         let mut args = sig.inputs.iter().try_skip_map(|x| x.as_argument())?;
 
         let (mut ret, never_return) = Type::load_from_output(&sig.output)?;
@@ -140,6 +150,16 @@ impl Function {
         self.ret.resolve_declaration_types(resolver);
         for arg in &mut self.args {
             arg.ty.resolve_declaration_types(resolver);
+        }
+    }
+
+    // NOTE: No `generics` arg because Functions do not support generics and do not `impl Item`.
+    pub fn erase_types_inplace(&mut self, library: &Library, erased: &mut KnownErasedTypes) {
+        erased.erase_types_inplace(library, &mut self.ret, &[]);
+        for arg in &mut self.args {
+            warn!("Before erasing types: {:?}", arg);
+            erased.erase_types_inplace(library, &mut arg.ty, &[]);
+            warn!("After erasing types: {:?}", arg);
         }
     }
 

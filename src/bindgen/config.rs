@@ -341,6 +341,9 @@ pub struct ExportConfig {
     pub renaming_overrides_prefixing: bool,
     /// Mangling configuration.
     pub mangle: MangleConfig,
+    /// If true, erases transparent struct and enum types, replacing all uses with the underlying
+    /// type. Otherwise, generate and use typedefs.
+    pub erase_transparent_types: bool,
 }
 
 /// Mangling-specific configuration.
@@ -378,6 +381,12 @@ impl ExportConfig {
         if let Some(ref prefix) = self.prefix {
             item_name.insert_str(0, prefix);
         }
+    }
+    pub(crate) fn erase_transparent_types(&self, annotations: &AnnotationSet) -> bool {
+        if let Some(x) = annotations.bool("erase-type") {
+            return x;
+        }
+        self.erase_transparent_types
     }
 }
 
@@ -495,9 +504,9 @@ pub struct StructConfig {
     pub associated_constants_in_body: bool,
     /// The way to annotate this struct as #[must_use].
     pub must_use: Option<String>,
-    /// The way to annotation this function as #[deprecated] without notes
+    /// The way to annotation this struct as #[deprecated] without notes
     pub deprecated: Option<String>,
-    /// The way to annotation this function as #[deprecated] with notes
+    /// The way to annotation this struct as #[deprecated] with notes
     pub deprecated_with_note: Option<String>,
 }
 

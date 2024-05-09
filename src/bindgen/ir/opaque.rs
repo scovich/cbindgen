@@ -6,7 +6,8 @@ use crate::bindgen::config::Config;
 use crate::bindgen::declarationtyperesolver::DeclarationTypeResolver;
 use crate::bindgen::dependencies::Dependencies;
 use crate::bindgen::ir::{
-    AnnotationSet, Cfg, Documentation, GenericArgument, GenericParams, Item, ItemContainer, Path,
+    AnnotationSet, Cfg, Documentation, GenericArgument, GenericParams, Item, ItemContainer,
+    KnownErasedTypes, Path,
 };
 use crate::bindgen::library::Library;
 use crate::bindgen::mangle;
@@ -86,6 +87,20 @@ impl Item for OpaqueItem {
         resolver.add_struct(&self.path);
     }
 
+    fn is_generic(&self) -> bool {
+        self.generic_params.len() > 0
+    }
+
+    fn erase_types_inplace(
+        &mut self,
+        _library: &Library,
+        _erased: &mut KnownErasedTypes,
+        _generics: &[GenericArgument],
+    ) {
+        // Nothing to do here, because we don't (transitively) embed any types and
+        // `Type::erased_types` takes care of erasing generic args for us.
+    }
+
     fn rename_for_config(&mut self, config: &Config) {
         config.export.rename(&mut self.export_name);
     }
@@ -98,11 +113,7 @@ impl Item for OpaqueItem {
         library: &Library,
         out: &mut Monomorphs,
     ) {
-        assert!(
-            !self.generic_params.is_empty(),
-            "{} is not generic",
-            self.path
-        );
+        assert!(self.is_generic(), "{} is not generic", self.path);
 
         // We can be instantiated with less generic params because of default
         // template parameters, or because of empty types that we remove during

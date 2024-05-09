@@ -129,8 +129,8 @@ If you ensure everything has a guaranteed repr, then cbindgen will generate defi
 * union
 * type
 * `[T; n]` (arrays always have a guaranteed C-compatible layout)
-* `&T`, `&mut T`, `*const T`, `*mut T`, `Option<&T>`, `Option<&mut T>` (all have the same pointer ABI)
-* `fn()` (as an actual function pointer)
+* `&T`, `&mut T`, `*const T`, `*mut T`, `Option<&T>`, `Option<&mut T>`, `NonNull<T>`, `Option<NonNull<T>>`, `Box<T>`, `Option<Box<T>>` (all have the same pointer ABI, although their Rust semantics vary greatly)
+* `fn()`, Option<fn()> (as an actual function pointer)
 * `bitflags! { ... }` (if macro_expansion.bitflags is enabled)
 
 structs, enums, unions, and type aliases may be generic, although certain generic substitutions may fail to resolve under certain configurations. In C mode generics are resolved through monomorphization and mangling, while in C++ mode generics are resolved with templates. cbindgen cannot support generic functions, as they do not actually have a single defined symbol.
@@ -810,6 +810,57 @@ deprecated_with_notes = "DEPRECATED_STRUCT_WITH_NOTE"
 #
 # default: false
 # associated_constants_in_body: false
+
+# Whether to replace a transparent struct with its underlying type instead of a typedef. Useful in
+# special cases where the emitted typedef is unhelpful, such as deeply nested or templated types.
+#
+# For example, given the following Rust code:
+#
+# ```rust
+# #[repr(transparent)]
+# pub struct Handle<T> {
+#     ptr: NonNull<T>,
+# }
+#
+# pub struct Foo { }
+#
+# #[no_mangle]
+# pub extern "C" fn foo_operation(foo: Option<Handle<Foo>>) { }
+# ```
+#
+# By default, the exported C++ code would fail to compile, because the function takes `Option`
+# (which is an opaque type) by value.
+#
+# With `replace_transparent_struct_with_underlying = true`, the code changes to just:
+#
+# ```cpp
+# struct Foo;
+#
+# void foo_operation(Foo* foo);
+# ```
+#
+# NOTE: This setting does _NOT_ disable user-defined type aliases for transparent structs.
+#
+# If we we adjust the previous example to use a type alias:
+# ```rust
+# type NullableFooHandle = Option<Handle<Foo>>;
+#
+# #[no_mangle]
+# pub extern "C" fn foo_operation(foo: Option<Handle<Foo>>) { }
+# ```
+#
+# Then the exported code will use it:
+#
+# ```cpp
+# struct Foo;
+#
+# using NullableFooHandle = Foo*
+#
+# void foo_operation(NullableFooHandle foo);
+# ```
+#
+# default: false
+replace_transparent_struct_with_underlying = false
 
 # Whether to derive a simple constructor that takes a value for every field.
 # default: false

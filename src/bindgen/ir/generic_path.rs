@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::io::Write;
 use std::ops::Deref;
 
@@ -8,6 +9,7 @@ use crate::bindgen::config::{Config, Language};
 use crate::bindgen::declarationtyperesolver::{DeclarationType, DeclarationTypeResolver};
 use crate::bindgen::ir::{ConstExpr, Path, Type};
 use crate::bindgen::language_backend::LanguageBackend;
+use crate::bindgen::library::Library;
 use crate::bindgen::utilities::IterHelpers;
 use crate::bindgen::writer::SourceWriter;
 
@@ -81,7 +83,6 @@ impl GenericParams {
         item_name: &str,
         arguments: &'out [GenericArgument],
     ) -> Vec<(&'out Path, &'out GenericArgument)> {
-        assert!(self.len() > 0, "{} is not generic", item_name);
         assert!(
             self.len() == arguments.len(),
             "{} has {} params but is being instantiated with {} values",
@@ -183,6 +184,63 @@ impl GenericArgument {
             GenericArgument::Type(ref mut ty) => ty.rename_for_config(config, generic_params),
             GenericArgument::Const(ref mut expr) => expr.rename_for_config(config),
         }
+    }
+}
+
+#[derive(Default)]
+pub struct KnownErasedTypes {
+    // Remember paths we've already visited, so we don't repeat unnecessary work.
+    // TODO: how to handle recursive types such as `struct Foo { next: Box<Foo> }`?
+    known_types: HashMap<Type, Option<Type>>,
+}
+
+impl KnownErasedTypes {
+    pub fn erase_types_inplace(
+        &mut self,
+        library: &Library,
+        target: &mut Type,
+        mappings: &[(&Path, &GenericArgument)],
+    ) {
+        if let Some(erased_type) = self.erase_types(library, target, mappings) {
+            warn!("Replacing {:?} with {:?}", target, erased_type);
+            *target = erased_type;
+        }
+    }
+    #[must_use]
+    pub fn erase_types(
+        &mut self,
+        library: &Library,
+        target: &Type,
+        mappings: &[(&Path, &GenericArgument)],
+    ) -> Option<Type> {
+        // NOTE: If there are template type mappings, apply them before performing type erasure and
+        // cache the result of _that_ replacement; the target will be replaced with the erased type
+        // (if any), or else the specialized type (if any).
+        let specialized = if mappings.is_empty() {
+            None
+        } else {
+            let specialized = target.specialize(mappings);
+            warn!("specialized {:?} as {:?}", target, specialized);
+            Some(specialized)
+        };
+        let target = specialized.as_ref().unwrap_or(target);
+        let maybe_known_type = self.known_types.get(target);
+        let unknown_type = maybe_known_type.is_none();
+        let erased_type: Option<Type> = if let Some(known_type) = maybe_known_type {
+            known_type.clone()
+        } else {
+            let erased_ty = target.erase_types(library, self);
+            if let Type::Path(path) = target {
+                if path.name() == "T" {
+                    warn!("^^^ Replacing a template param!\n");
+                }
+            };
+            erased_ty
+        };
+        if unknown_type {
+            self.known_types.insert(target.clone(), erased_type.clone());
+        }
+        erased_type.or(specialized)
     }
 }
 

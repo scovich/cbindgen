@@ -10,8 +10,8 @@ use crate::bindgen::config::Config;
 use crate::bindgen::declarationtyperesolver::DeclarationTypeResolver;
 use crate::bindgen::dependencies::Dependencies;
 use crate::bindgen::ir::{
-    AnnotationSet, Cfg, Documentation, GenericArgument, GenericParams, Item, ItemContainer, Path,
-    Type,
+    AnnotationSet, Cfg, Documentation, GenericArgument, GenericParams, Item, ItemContainer,
+    KnownErasedTypes, Path, Type,
 };
 use crate::bindgen::library::Library;
 use crate::bindgen::mangle;
@@ -89,10 +89,6 @@ impl Typedef {
         }
     }
 
-    pub fn is_generic(&self) -> bool {
-        self.generic_params.len() > 0
-    }
-
     pub fn add_monomorphs(&self, library: &Library, out: &mut Monomorphs) {
         // Generic structs can instantiate monomorphs only once they've been
         // instantiated. See `instantiate_monomorph` for more details.
@@ -139,6 +135,22 @@ impl Item for Typedef {
 
     fn resolve_declaration_types(&mut self, resolver: &DeclarationTypeResolver) {
         self.aliased.resolve_declaration_types(resolver);
+    }
+
+    fn is_generic(&self) -> bool {
+        self.generic_params.len() > 0
+    }
+
+    fn erase_types_inplace(
+        &mut self,
+        library: &Library,
+        erased: &mut KnownErasedTypes,
+        generics: &[GenericArgument],
+    ) {
+        warn!("Before erasing types: {:?}", self);
+        let mappings = self.generic_params.call(self.path.name(), generics);
+        erased.erase_types_inplace(library, &mut self.aliased, &mappings);
+        warn!("After erasing types: {:?}", self);
     }
 
     fn rename_for_config(&mut self, config: &Config) {

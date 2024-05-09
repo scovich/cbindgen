@@ -13,8 +13,8 @@ use crate::bindgen::config::{Config, Language};
 use crate::bindgen::declarationtyperesolver::DeclarationTypeResolver;
 use crate::bindgen::dependencies::Dependencies;
 use crate::bindgen::ir::{
-    AnnotationSet, Cfg, ConditionWrite, Documentation, GenericParams, Item, ItemContainer, Path,
-    Struct, ToCondition, Type,
+    AnnotationSet, Cfg, ConditionWrite, Documentation, GenericArgument, GenericParams, Item,
+    ItemContainer, KnownErasedTypes, Path, Struct, ToCondition, Type,
 };
 use crate::bindgen::language_backend::LanguageBackend;
 use crate::bindgen::library::Library;
@@ -588,6 +588,19 @@ impl Item for Constant {
 
     fn resolve_declaration_types(&mut self, resolver: &DeclarationTypeResolver) {
         self.ty.resolve_declaration_types(resolver);
+    }
+
+    fn is_generic(&self) -> bool {
+        false
+    }
+
+    fn erase_types_inplace(
+        &mut self,
+        library: &Library,
+        erased: &mut KnownErasedTypes,
+        _generics: &[GenericArgument],
+    ) {
+        erased.erase_types_inplace(library, &mut self.ty, &[]);
     }
 }
 

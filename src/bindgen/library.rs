@@ -10,7 +10,9 @@ use crate::bindgen::config::{Config, Language, SortKey};
 use crate::bindgen::declarationtyperesolver::DeclarationTypeResolver;
 use crate::bindgen::dependencies::Dependencies;
 use crate::bindgen::error::Error;
-use crate::bindgen::ir::{Constant, Enum, Function, Item, ItemContainer, ItemMap};
+use crate::bindgen::ir::{
+    Constant, Enum, Function, Item, ItemContainer, ItemMap, KnownErasedTypes,
+};
 use crate::bindgen::ir::{OpaqueItem, Path, Static, Struct, Typedef, Union};
 use crate::bindgen::monomorph::Monomorphs;
 use crate::bindgen::ItemType;
@@ -61,8 +63,9 @@ impl Library {
     }
 
     pub fn generate(mut self) -> Result<Bindings, Error> {
+        self.erase_types(&mut KnownErasedTypes::default());
         self.transfer_annotations();
-        self.simplify_standard_types();
+        //self.simplify_standard_types();
 
         match self.config.function.sort_by.unwrap_or(self.config.sort_by) {
             SortKey::Name => self.functions.sort_by(|x, y| x.path.cmp(&y.path)),
@@ -365,6 +368,78 @@ impl Library {
         for item in &mut self.functions {
             item.resolve_declaration_types(&resolver);
         }
+    }
+
+    // Erases types only in order to populate the known erased types
+    fn erase_item_types<T: Item + Clone>(&self, erased: &mut KnownErasedTypes, items: &ItemMap<T>) {
+        items.for_all_items(|item| {
+            if !item.is_generic() {
+                item.clone().erase_types_inplace(self, erased, &[]);
+            }
+        });
+    }
+
+    // Actually erase types now
+    fn erase_item_types_inplace<T: Item + Clone>(
+        &self,
+        erased: &mut KnownErasedTypes,
+        mut items: ItemMap<T>,
+    ) -> ItemMap<T> {
+        items.for_all_items_mut(|item| {
+            if !item.is_generic() {
+                item.erase_types_inplace(self, erased, &[]);
+            }
+        });
+        items
+    }
+
+    fn erase_types(&mut self, erased: &mut KnownErasedTypes) {
+        // Make an initial pass to populate the known erased types, intentionally throwing away the
+        // result. This is required in case one type of item is defined in terms of another item of
+        // the same type, because the library's item map is empty during the actual type erasure.
+        self.erase_item_types(erased, &self.constants);
+        self.erase_item_types(erased, &self.globals);
+        self.erase_item_types(erased, &self.enums);
+        self.erase_item_types(erased, &self.structs);
+        self.erase_item_types(erased, &self.unions);
+        self.erase_item_types(erased, &self.opaque_items);
+        self.erase_item_types(erased, &self.typedefs);
+        for f in &self.functions {
+            f.clone().erase_types_inplace(self, erased);
+        }
+
+        // Now we can actually erase the types.
+        //
+        // NOTE: Rust borrowing lifetime rules require us to `take` before calling
+        // `erase_item_types_inplace`. If we don't `take` at all, then `&mut self` and `&mut
+        // self.constants` will conflict. If we try to do it in one line, then the shared borrow for
+        // `erase_item_types_inplace` is already active when `take` requests a mutable borrow.
+        let constants = std::mem::take(&mut self.constants);
+        self.constants = self.erase_item_types_inplace(erased, constants);
+
+        let globals = std::mem::take(&mut self.globals);
+        self.globals = self.erase_item_types_inplace(erased, globals);
+
+        let enums = std::mem::take(&mut self.enums);
+        self.enums = self.erase_item_types_inplace(erased, enums);
+
+        let structs = std::mem::take(&mut self.structs);
+        self.structs = self.erase_item_types_inplace(erased, structs);
+
+        let unions = std::mem::take(&mut self.unions);
+        self.unions = self.erase_item_types_inplace(erased, unions);
+
+        let opaque_items = std::mem::take(&mut self.opaque_items);
+        self.opaque_items = self.erase_item_types_inplace(erased, opaque_items);
+
+        let typedefs = std::mem::take(&mut self.typedefs);
+        self.typedefs = self.erase_item_types_inplace(erased, typedefs);
+
+        let mut functions = std::mem::take(&mut self.functions);
+        for f in &mut functions {
+            f.erase_types_inplace(self, erased);
+        }
+        self.functions = functions;
     }
 
     fn simplify_standard_types(&mut self) {

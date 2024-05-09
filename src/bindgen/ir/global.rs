@@ -5,7 +5,10 @@
 use crate::bindgen::config::Config;
 use crate::bindgen::declarationtyperesolver::DeclarationTypeResolver;
 use crate::bindgen::dependencies::Dependencies;
-use crate::bindgen::ir::{AnnotationSet, Cfg, Documentation, Item, ItemContainer, Path, Type};
+use crate::bindgen::ir::{
+    AnnotationSet, Cfg, Documentation, GenericArgument, Item, ItemContainer, KnownErasedTypes,
+    Path, Type,
+};
 use crate::bindgen::library::Library;
 
 #[derive(Debug, Clone)]
@@ -97,6 +100,19 @@ impl Item for Static {
 
     fn resolve_declaration_types(&mut self, resolver: &DeclarationTypeResolver) {
         self.ty.resolve_declaration_types(resolver);
+    }
+
+    fn is_generic(&self) -> bool {
+        false
+    }
+
+    fn erase_types_inplace(
+        &mut self,
+        library: &Library,
+        erased: &mut KnownErasedTypes,
+        _generics: &[GenericArgument],
+    ) {
+        erased.erase_types_inplace(library, &mut self.ty, &[]);
     }
 
     fn add_dependencies(&self, library: &Library, out: &mut Dependencies) {
