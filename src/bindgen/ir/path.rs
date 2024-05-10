@@ -11,10 +11,7 @@ pub struct Path {
 }
 
 impl Path {
-    pub fn new<T>(name: T) -> Self
-    where
-        String: From<T>,
-    {
+    pub fn new(name: impl Into<String>) -> Self {
         Self { name: name.into() }
     }
 

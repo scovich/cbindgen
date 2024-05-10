@@ -98,7 +98,7 @@ enum ErasedTransparentEnumTuple {
 
 #[repr(transparent)]
 enum TransparentEnumStruct {
-    A { only_field: NonNull<TransparentInt> },
+    A { only_field: Cell<NonNull<TransparentInt>> },
 }
 
 #[repr(transparent)]
@@ -138,4 +138,5 @@ pub extern "C" fn root(
     p: ErasedTransparentEnumStruct,
     q: EnumStruct,
     r: TransparentEnumStruct,
+    s: Box<i32>,
 ) { }
