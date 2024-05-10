@@ -63,7 +63,8 @@ impl Library {
     }
 
     pub fn generate(mut self) -> Result<Bindings, Error> {
-        self.erase_types(&mut KnownErasedTypes::default());
+        let mut erased = KnownErasedTypes::default();
+        self.erase_types(&mut erased);
         self.transfer_annotations();
         //self.simplify_standard_types();
 
@@ -73,7 +74,7 @@ impl Library {
         }
 
         if self.config.language != Language::Cxx {
-            self.instantiate_monomorphs();
+            self.instantiate_monomorphs(&mut erased);
         }
         self.remove_excluded();
         if self.config.language == Language::C {
@@ -442,7 +443,7 @@ impl Library {
         self.functions = functions;
     }
 
-    fn instantiate_monomorphs(&mut self) {
+    fn instantiate_monomorphs(&mut self, erased: &mut KnownErasedTypes) {
         // Collect a list of monomorphs
         let mut monomorphs = Monomorphs::default();
 
@@ -463,19 +464,24 @@ impl Library {
         }
 
         // Insert the monomorphs into self
-        for monomorph in monomorphs.drain_structs() {
+        for mut monomorph in monomorphs.drain_structs() {
+            monomorph.erase_types_inplace(self, erased, &[]);
             self.structs.try_insert(monomorph);
         }
-        for monomorph in monomorphs.drain_unions() {
+        for mut monomorph in monomorphs.drain_unions() {
+            monomorph.erase_types_inplace(self, erased, &[]);
             self.unions.try_insert(monomorph);
         }
-        for monomorph in monomorphs.drain_opaques() {
+        for mut monomorph in monomorphs.drain_opaques() {
+            monomorph.erase_types_inplace(self, erased, &[]);
             self.opaque_items.try_insert(monomorph);
         }
-        for monomorph in monomorphs.drain_typedefs() {
+        for mut monomorph in monomorphs.drain_typedefs() {
+            monomorph.erase_types_inplace(self, erased, &[]);
             self.typedefs.try_insert(monomorph);
         }
-        for monomorph in monomorphs.drain_enums() {
+        for mut monomorph in monomorphs.drain_enums() {
+            monomorph.erase_types_inplace(self, erased, &[]);
             self.enums.try_insert(monomorph);
         }
 

@@ -585,17 +585,19 @@ impl Type {
                 }
             }
             Type::Path(ref path) => {
-                if let Some(ref mut items) = library.get_items(path.path()) {
-                    if let Some(ref mut item) = items.first_mut() {
+                if let Some(mut items) = library.get_items(path.path()) {
+                    if let Some(item) = items.first_mut() {
                         // First, erase the generic args themselves. This is nice for most Item
                         // types, but crucial for `OpaqueItem` that would otherwise miss out.
-                        let erased_generics: Vec<_> = path
+                        let mut did_erase_generics = false;
+                        let generics: Vec<_> = path
                             .generics()
                             .iter()
                             .map(|g| match g {
                                 GenericArgument::Type(ty) => {
                                     let erased_ty = erased.erase_types(library, ty, &[]);
                                     erased_ty.as_ref().inspect(|e| {
+                                        did_erase_generics = true;
                                         warn!("*** Erased generic {:?} as {:?}", ty, e);
                                     });
                                     GenericArgument::Type(erased_ty.unwrap_or_else(|| ty.clone()))
@@ -604,10 +606,10 @@ impl Type {
                             })
                             .collect();
                         item.deref_mut()
-                            .erase_types_inplace(library, erased, &erased_generics);
+                            .erase_types_inplace(library, erased, &generics);
                         match item {
                             ItemContainer::OpaqueItem(o) => {
-                                let generic = match erased_generics.first() {
+                                let generic = match generics.first() {
                                     Some(GenericArgument::Type(ref ty)) => ty,
                                     _ => return None,
                                 };
@@ -679,6 +681,11 @@ impl Type {
                                 return Some(t.aliased.clone());
                             }
                             _ => {}
+                        }
+
+                        // The path was not erased, so apply any erased generics to it.
+                        if did_erase_generics {
+                            return Some(Type::Path(GenericPath::new(path.path().clone(), generics)))
                         }
                     }
                 } else {
