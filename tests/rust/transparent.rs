@@ -109,7 +109,7 @@ enum ErasedTransparentEnumStruct {
 
 #[repr(C)]
 enum EnumStruct {
-    A { only_field: TransparentInt },
+    A { only_field: Option<NonZeroU8> },
 }
 
 #[no_mangle]

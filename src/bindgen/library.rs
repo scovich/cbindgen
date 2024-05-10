@@ -442,29 +442,6 @@ impl Library {
         self.functions = functions;
     }
 
-    fn simplify_standard_types(&mut self) {
-        let config = &self.config;
-
-        self.structs.for_all_items_mut(|x| {
-            x.simplify_standard_types(config);
-        });
-        self.enums.for_all_items_mut(|x| {
-            x.simplify_standard_types(config);
-        });
-        self.unions.for_all_items_mut(|x| {
-            x.simplify_standard_types(config);
-        });
-        self.globals.for_all_items_mut(|x| {
-            x.simplify_standard_types(config);
-        });
-        self.typedefs.for_all_items_mut(|x| {
-            x.simplify_standard_types(config);
-        });
-        for x in &mut self.functions {
-            x.simplify_standard_types(config);
-        }
-    }
-
     fn instantiate_monomorphs(&mut self) {
         // Collect a list of monomorphs
         let mut monomorphs = Monomorphs::default();

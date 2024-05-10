@@ -16,7 +16,7 @@ use crate::bindgen::config::{Config, ParseConfig};
 use crate::bindgen::error::Error;
 use crate::bindgen::ir::{
     AnnotationSet, AnnotationValue, Cfg, Constant, Documentation, Enum, Function, GenericParam,
-    GenericParams, ItemMap, OpaqueItem, Path, Static, Struct, Type, Typedef, Union,
+    GenericParams, IntKind, ItemMap, OpaqueItem, Path, PrimitiveType, Static, Struct, Type, Typedef, Union,
 };
 use crate::bindgen::utilities::{SynAbiHelpers, SynAttributeHelpers, SynItemHelpers};
 
@@ -468,6 +468,36 @@ impl Parse {
         add_opaque("VecDeque", vec!["T"]);
         add_opaque("ManuallyDrop", vec!["T"]);
         add_opaque("MaybeUninit", vec!["T"]);
+
+        let mut add_nonzero = |name: &str, kind: IntKind, signed: bool| {
+            let aliased = Type::Primitive(PrimitiveType::Integer {
+                zeroable: false,
+                kind,
+                signed
+            });
+
+            // Erase the typedef so users never see it
+            let mut annotations = AnnotationSet::new();
+            annotations.add_default("erase-type", AnnotationValue::Bool(true));
+            self.typedefs.try_insert(Typedef::new(
+                Path::new(name),
+                GenericParams::default(),
+                aliased,
+                None,
+                annotations,
+                Documentation::none(),
+            ))
+        };
+        add_nonzero("NonZeroU8", IntKind::B8, false);
+        add_nonzero("NonZeroU16", IntKind::B16, false);
+        add_nonzero("NonZeroU32", IntKind::B32, false);
+        add_nonzero("NonZeroU64", IntKind::B64, false);
+        add_nonzero("NonZeroUSize", IntKind::Size, false);
+        add_nonzero("NonZeroI8", IntKind::B8, true);
+        add_nonzero("NonZeroI16", IntKind::B16, true);
+        add_nonzero("NonZeroI32", IntKind::B32, true);
+        add_nonzero("NonZeroI64", IntKind::B64, true);
+        add_nonzero("NonZeroISize", IntKind::Size, true);
     }
 
     pub fn extend_with(&mut self, other: &Parse) {

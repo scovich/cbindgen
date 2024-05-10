@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use std::borrow::Cow;
-
 use syn::ext::IdentExt;
 
 use crate::bindgen::config::{Config, Language};
@@ -636,95 +634,6 @@ impl Type {
         }
     }
 
-    fn nonzero_to_primitive(&self) -> Option<Self> {
-        let path = match *self {
-            Type::Path(ref p) => p,
-            _ => return None,
-        };
-
-        if !path.generics().is_empty() {
-            return None;
-        }
-
-        let name = path.name();
-        if !name.starts_with("NonZero") {
-            return None;
-        }
-
-        let (kind, signed) = match path.name() {
-            "NonZeroU8" => (IntKind::B8, false),
-            "NonZeroU16" => (IntKind::B16, false),
-            "NonZeroU32" => (IntKind::B32, false),
-            "NonZeroU64" => (IntKind::B64, false),
-            "NonZeroUSize" => (IntKind::Size, false),
-            "NonZeroI8" => (IntKind::B8, true),
-            "NonZeroI16" => (IntKind::B16, true),
-            "NonZeroI32" => (IntKind::B32, true),
-            "NonZeroI64" => (IntKind::B64, true),
-            "NonZeroISize" => (IntKind::Size, true),
-            _ => return None,
-        };
-
-        Some(Type::Primitive(PrimitiveType::Integer {
-            zeroable: false,
-            signed,
-            kind,
-        }))
-    }
-
-    fn simplified_type(&self, config: &Config) -> Option<Self> {
-        let path = match *self {
-            Type::Path(ref p) => p,
-            _ => return None,
-        };
-
-        if path.generics().is_empty() {
-            return self.nonzero_to_primitive();
-        }
-
-        if path.generics().len() != 1 {
-            return None;
-        }
-
-        let unsimplified_generic = match path.generics()[0] {
-            GenericArgument::Type(ref ty) => ty,
-            GenericArgument::Const(_) => return None,
-        };
-
-        let generic = match unsimplified_generic.simplified_type(config) {
-            Some(generic) => Cow::Owned(generic),
-            None => Cow::Borrowed(unsimplified_generic),
-        };
-        match path.name() {
-            "Option" => {
-                if let Some(nullable) = generic.make_nullable() {
-                    return Some(nullable);
-                }
-                if let Some(zeroable) = generic.make_zeroable() {
-                    return Some(zeroable);
-                }
-                None
-            }
-            "NonNull" => Some(Type::Ptr {
-                ty: Box::new(generic.into_owned()),
-                is_const: false,
-                is_nullable: false,
-                is_ref: false,
-            }),
-            "Box" if config.language != Language::Cxx => Some(Type::Ptr {
-                ty: Box::new(generic.into_owned()),
-                is_const: false,
-                is_nullable: false,
-                is_ref: false,
-            }),
-            "Cell" => Some(generic.into_owned()),
-            "ManuallyDrop" | "MaybeUninit" | "Pin" if config.language != Language::Cxx => {
-                Some(generic.into_owned())
-            }
-            _ => None,
-        }
-    }
-
     #[must_use]
     pub fn erase_types(&self, library: &Library, erased: &mut KnownErasedTypes) -> Option<Type> {
         let should_erase_type = |item: &dyn Item| {
@@ -899,13 +808,6 @@ impl Type {
             }
         }
         None
-    }
-
-    pub fn simplify_standard_types(&mut self, config: &Config) {
-        self.visit_types(|ty| ty.simplify_standard_types(config));
-        if let Some(ty) = self.simplified_type(config) {
-            *self = ty;
-        }
     }
 
     pub fn replace_self_with(&mut self, self_ty: &Path) {
