@@ -12,7 +12,7 @@ use crate::bindgen::dependencies::Dependencies;
 use crate::bindgen::ir::{
     AnnotationSet, AnnotationValue, Cfg, ConditionWrite, DeprecatedNoteKind, Documentation, Field,
     GenericArgument, GenericParams, GenericPath, Item, ItemContainer, KnownErasedTypes, Literal,
-    Path, Repr, ReprStyle, Struct, ToCondition, Type,
+    MaybeDefaultGenericAguments, Path, Repr, ReprStyle, Struct, ToCondition, Type,
 };
 use crate::bindgen::language_backend::LanguageBackend;
 use crate::bindgen::library::Library;
@@ -501,7 +501,10 @@ impl Item for Enum {
         generics: &[GenericArgument],
     ) {
         let inline_tag_field = Self::inline_tag_field(&self.repr);
-        let mappings = self.generic_params.call(self.path.name(), generics);
+        let generics = MaybeDefaultGenericAguments::new(&self.generic_params, generics);
+        let mappings = self
+            .generic_params
+            .call(self.path.name(), generics.as_slice());
         for variant in self.variants.iter_mut() {
             if let VariantBody::Body { ref mut body, .. } = variant.body {
                 for (i, field) in body.fields.iter_mut().enumerate() {

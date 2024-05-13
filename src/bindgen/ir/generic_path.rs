@@ -13,16 +13,17 @@ use crate::bindgen::library::Library;
 use crate::bindgen::utilities::IterHelpers;
 use crate::bindgen::writer::SourceWriter;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum GenericParamType {
     Type,
     Const(Type),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct GenericParam {
     name: Path,
     ty: GenericParamType,
+    default: Option<GenericArgument>,
 }
 
 impl GenericParam {
@@ -30,20 +31,36 @@ impl GenericParam {
         GenericParam {
             name: Path::new(name),
             ty: GenericParamType::Type,
+            default: None,
         }
     }
 
     pub fn load(param: &syn::GenericParam) -> Result<Option<Self>, String> {
         match *param {
-            syn::GenericParam::Type(syn::TypeParam { ref ident, .. }) => Ok(Some(GenericParam {
-                name: Path::new(ident.unraw().to_string()),
-                ty: GenericParamType::Type,
-            })),
+            syn::GenericParam::Type(syn::TypeParam {
+                ref ident,
+                ref default,
+                ..
+            }) => {
+                let default = match default.as_ref().map(Type::load).transpose()? {
+                    None => None,
+                    Some(None) => Err(format!("unsupported generic type default: {:?}", default))?,
+                    Some(Some(ty)) => Some(GenericArgument::Type(ty)),
+                };
+                Ok(Some(GenericParam {
+                    name: Path::new(ident.unraw().to_string()),
+                    ty: GenericParamType::Type,
+                    default,
+                }))
+            }
 
             syn::GenericParam::Lifetime(_) => Ok(None),
 
             syn::GenericParam::Const(syn::ConstParam {
-                ref ident, ref ty, ..
+                ref ident,
+                ref ty,
+                ref default,
+                ..
             }) => match Type::load(ty)? {
                 None => {
                     // A type that evaporates, like PhantomData.
@@ -52,6 +69,11 @@ impl GenericParam {
                 Some(ty) => Ok(Some(GenericParam {
                     name: Path::new(ident.unraw().to_string()),
                     ty: GenericParamType::Const(ty),
+                    default: default
+                        .as_ref()
+                        .map(ConstExpr::load)
+                        .transpose()?
+                        .map(GenericArgument::Const),
                 })),
             },
         }
@@ -59,6 +81,41 @@ impl GenericParam {
 
     pub fn name(&self) -> &Path {
         &self.name
+    }
+}
+
+/// If `generics` is empty, create a set of "default" generic arguments, which preserves the
+/// existing parameter name. Useful to allow `call` to work when no generics are provided.
+pub struct MaybeDefaultGenericAguments<'a> {
+    generics: &'a [GenericArgument],
+    defaults: Option<Vec<GenericArgument>>,
+}
+
+impl<'a> MaybeDefaultGenericAguments<'a> {
+    pub fn new(params: &GenericParams, generics: &'a [GenericArgument]) -> Self {
+        let defaults = if generics.is_empty() && !params.is_empty() {
+            Some(
+                params
+                    .iter()
+                    .cloned()
+                    .map(|param| {
+                        GenericArgument::Type(Type::Path(GenericPath::new(
+                            param.name.clone(),
+                            vec![],
+                        )))
+                    })
+                    .collect(),
+            )
+        } else {
+            None
+        };
+        Self { generics, defaults }
+    }
+
+    pub fn as_slice(&self) -> &[GenericArgument] {
+        self.defaults
+            .as_ref()
+            .map_or(self.generics, |defaults| defaults.as_slice())
     }
 }
 
@@ -84,15 +141,21 @@ impl GenericParams {
         arguments: &'out [GenericArgument],
     ) -> Vec<(&'out Path, &'out GenericArgument)> {
         assert!(
-            self.len() == arguments.len(),
+            self.len() >= arguments.len(),
             "{} has {} params but is being instantiated with {} values",
             item_name,
             self.len(),
             arguments.len(),
         );
         self.iter()
-            .map(|param| param.name())
-            .zip(arguments.iter())
+            .enumerate()
+            .map(|(i, param)| {
+                let arg = arguments
+                    .get(i)
+                    .or(param.default.as_ref())
+                    .expect("not enough arguments for generic");
+                (param.name(), arg)
+            })
             .collect()
     }
 
@@ -112,13 +175,18 @@ impl GenericParams {
                 match item.ty {
                     GenericParamType::Type => {
                         write!(out, "typename {}", item.name);
-                        if with_default {
+                        if let Some(GenericArgument::Type(ref ty)) = item.default {
+                            write!(out, " = ");
+                            cdecl::write_type(language_backend, out, ty, config);
+                        } else if with_default {
                             write!(out, " = void");
                         }
                     }
                     GenericParamType::Const(ref ty) => {
                         cdecl::write_field(language_backend, out, ty, item.name.name(), config);
-                        if with_default {
+                        if let Some(GenericArgument::Const(ref expr)) = item.default {
+                            write!(out, " = {}", expr.as_str());
+                        } else if with_default {
                             write!(out, " = 0");
                         }
                     }
@@ -181,6 +249,7 @@ impl GenericArgument {
 
     pub fn rename_for_config(&mut self, config: &Config, generic_params: &GenericParams) {
         match *self {
+            //GenericArgument::Generic(ref param) => warn!("Cannot rename generic param {:?}", param),
             GenericArgument::Type(ref mut ty) => ty.rename_for_config(config, generic_params),
             GenericArgument::Const(ref mut expr) => expr.rename_for_config(config),
         }
@@ -220,16 +289,32 @@ impl KnownErasedTypes {
             None
         } else {
             let specialized = target.specialize(mappings);
-            warn!("specialized {:?} as {:?}", target, specialized);
-            Some(specialized)
+            if specialized != *target {
+                warn!(
+                    "specialized {:?} as {:?} using mappings {:?}",
+                    target, specialized, mappings
+                );
+                Some(specialized)
+            } else {
+                None
+            }
         };
-        let target = specialized.as_ref().unwrap_or(target);
+        //let target = specialized.as_ref().unwrap_or(target);
         let maybe_known_type = self.known_types.get(target);
         let unknown_type = maybe_known_type.is_none();
         let erased_type: Option<Type> = if let Some(known_type) = maybe_known_type {
             known_type.clone()
         } else {
-            let erased_ty = target.erase_types(library, self);
+            let mut erased_ty = target.erase_types(library, mappings, self);
+            while let Some(ref ty) = erased_ty {
+                match ty.erase_types(library, mappings, self) {
+                    Some(ty) => {
+                        warn!("Erased type {:?} is itself erasable as {:?}", erased_ty, ty);
+                        erased_ty = Some(ty);
+                    }
+                    None => break,
+                }
+            }
             if let Type::Path(path) = target {
                 if path.name() == "T" {
                     warn!("^^^ Replacing a template param!\n");
@@ -238,6 +323,7 @@ impl KnownErasedTypes {
             erased_ty
         };
         if unknown_type {
+            warn!("Caching erasure of {:?} as {:?}", target, erased_type);
             self.known_types.insert(target.clone(), erased_type.clone());
         }
         erased_type.or(specialized)

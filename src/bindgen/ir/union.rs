@@ -9,7 +9,7 @@ use crate::bindgen::declarationtyperesolver::DeclarationTypeResolver;
 use crate::bindgen::dependencies::Dependencies;
 use crate::bindgen::ir::{
     AnnotationSet, Cfg, Documentation, Field, GenericArgument, GenericParams, Item, ItemContainer,
-    KnownErasedTypes, Path, Repr, ReprAlign, ReprStyle,
+    KnownErasedTypes, MaybeDefaultGenericAguments, Path, Repr, ReprAlign, ReprStyle,
 };
 use crate::bindgen::library::Library;
 use crate::bindgen::mangle;
@@ -158,7 +158,10 @@ impl Item for Union {
         erased: &mut KnownErasedTypes,
         generics: &[GenericArgument],
     ) {
-        let mappings = self.generic_params.call(self.path.name(), generics);
+        let generics = MaybeDefaultGenericAguments::new(&self.generic_params, generics);
+        let mappings = self
+            .generic_params
+            .call(self.path.name(), generics.as_slice());
         for field in &mut self.fields {
             erased.erase_types_inplace(library, &mut field.ty, &mappings);
         }

@@ -372,8 +372,15 @@ impl Library {
     }
 
     // Erases types only in order to populate the known erased types
-    fn erase_item_types<T: Item + Clone>(&self, erased: &mut KnownErasedTypes, items: &ItemMap<T>) {
+    fn erase_item_types<T: Item + Clone + std::fmt::Debug>(
+        &self,
+        erased: &mut KnownErasedTypes,
+        items: &ItemMap<T>,
+    ) {
         items.for_all_items(|item| {
+            if item.name() == "Foo" {
+                warn!("FOO: {:?}", item);
+            }
             if !item.is_generic() {
                 item.clone().erase_types_inplace(self, erased, &[]);
             }
@@ -387,9 +394,7 @@ impl Library {
         mut items: ItemMap<T>,
     ) -> ItemMap<T> {
         items.for_all_items_mut(|item| {
-            if !item.is_generic() {
-                item.erase_types_inplace(self, erased, &[]);
-            }
+            item.erase_types_inplace(self, erased, &[]);
         });
         items
     }

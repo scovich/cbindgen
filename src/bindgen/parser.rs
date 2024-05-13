@@ -15,9 +15,9 @@ use crate::bindgen::cargo::{Cargo, PackageRef};
 use crate::bindgen::config::{Config, Language, ParseConfig};
 use crate::bindgen::error::Error;
 use crate::bindgen::ir::{
-    AnnotationSet, AnnotationValue, Cfg, Constant, Documentation, Enum, Function, GenericArgument,
-    GenericParam, GenericParams, GenericPath, IntKind, ItemMap, OpaqueItem, Path, PrimitiveType,
-    Static, Struct, Type, Typedef, Union,
+    AnnotationSet, AnnotationValue, Cfg, Constant, Documentation, Enum, EnumVariant, Function,
+    GenericArgument, GenericParam, GenericParams, GenericPath, IntKind, ItemMap, OpaqueItem, Path,
+    PrimitiveType, Static, Struct, Type, Typedef, Union, VariantBody,
 };
 use crate::bindgen::utilities::{SynAbiHelpers, SynAttributeHelpers, SynItemHelpers};
 
@@ -504,7 +504,7 @@ impl Parse {
             self.add_opaque("MaybeUninit", &["T"]);
             self.add_opaque("Pin", &["T"]);
         } else {
-            // Box<T> acts like NonNull<T>
+            // Box<T> acts like NonNull<T> in C
             self.add_erased_typedef(
                 "Box",
                 Type::Path(GenericPath::new(
@@ -519,11 +519,7 @@ impl Parse {
         }
 
         // Well-known and always-erased types
-        self.add_erased_typedef(
-            "Cell",
-            tpath.clone(),
-            &["T"],
-        );
+        self.add_erased_typedef("Cell", tpath.clone(), &["T"]);
 
         self.add_nonzero("NonZeroU8", IntKind::B8, false);
         self.add_nonzero("NonZeroU16", IntKind::B16, false);
@@ -982,7 +978,32 @@ impl Parse {
     ) {
         match Struct::load(&config.layout, item, mod_cfg) {
             Ok(st) => {
-                info!("Take {}::{}.", crate_name, &item.ident);
+                info!(
+                    "Take {}::{}, transparent={}.",
+                    crate_name, &item.ident, st.is_transparent
+                );
+                if st.is_transparent {
+                    // If the struct is transparent, emit a typedef of its NZT field type instead.
+                    //
+                    // NOTE: A `#[repr(transparent)]` struct with 2+ NZT fields fails to
+                    // compile, but 0 fields is allowed for some strange reason.
+                    if let Some(field) = st.fields.first() {
+                        let t = Typedef {
+                            path: st.path,
+                            export_name: st.export_name,
+                            generic_params: st.generic_params,
+                            aliased: field.ty.clone(),
+                            cfg: st.cfg,
+                            annotations: st.annotations,
+                            documentation: st.documentation,
+                        };
+                        warn!("Erasing transparent struct {} as {:?}", &item.ident, t);
+                        self.typedefs.try_insert(t);
+                        return;
+                    } else {
+                        error!("Cannot erase empty transparent struct {:?}", st.path);
+                    }
+                }
                 self.structs.try_insert(st);
             }
             Err(msg) => {
@@ -1029,7 +1050,39 @@ impl Parse {
     ) {
         match Enum::load(item, mod_cfg, config) {
             Ok(en) => {
-                info!("Take {}::{}.", crate_name, &item.ident);
+                info!(
+                    "Take {}::{}, transparent={}.",
+                    crate_name,
+                    &item.ident,
+                    en.is_transparent()
+                );
+                if en.is_transparent() {
+                    // If the enum is transparent, emit a typedef of its NZT variant type instead.
+                    //
+                    // NOTE: A `#[repr(transparent)]` enum fails to compile unless it has
+                    // exactly one NZT variant.
+                    if let Some(EnumVariant {
+                        body: VariantBody::Body { ref body, .. },
+                        ..
+                    }) = en.variants.first()
+                    {
+                        // NOTE: Inline tagged enum has the tag field first, ignore it.
+                        if let Some(field) = body.fields.last() {
+                            let t = Typedef {
+                                path: en.path,
+                                export_name: en.export_name,
+                                generic_params: en.generic_params,
+                                aliased: field.ty.clone(),
+                                cfg: en.cfg,
+                                annotations: en.annotations,
+                                documentation: en.documentation,
+                            };
+                            warn!("Erasing transparent enum {} as {:?}", &item.ident, t);
+                            self.typedefs.try_insert(t);
+                            return;
+                        }
+                    }
+                }
                 self.enums.try_insert(en);
             }
             Err(msg) => {

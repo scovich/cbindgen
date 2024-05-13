@@ -83,17 +83,6 @@ impl ItemContainer {
             ItemContainer::Typedef(ref x) => x,
         }
     }
-    pub fn deref_mut(&mut self) -> &mut dyn Item {
-        match *self {
-            ItemContainer::Constant(ref mut x) => x,
-            ItemContainer::Static(ref mut x) => x,
-            ItemContainer::OpaqueItem(ref mut x) => x,
-            ItemContainer::Struct(ref mut x) => x,
-            ItemContainer::Union(ref mut x) => x,
-            ItemContainer::Enum(ref mut x) => x,
-            ItemContainer::Typedef(ref mut x) => x,
-        }
-    }
 }
 
 #[derive(Debug, Clone)]

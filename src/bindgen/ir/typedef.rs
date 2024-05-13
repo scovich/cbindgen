@@ -11,7 +11,7 @@ use crate::bindgen::declarationtyperesolver::DeclarationTypeResolver;
 use crate::bindgen::dependencies::Dependencies;
 use crate::bindgen::ir::{
     AnnotationSet, Cfg, Documentation, GenericArgument, GenericParams, Item, ItemContainer,
-    KnownErasedTypes, Path, Type,
+    KnownErasedTypes, MaybeDefaultGenericAguments, Path, Type,
 };
 use crate::bindgen::library::Library;
 use crate::bindgen::mangle;
@@ -143,8 +143,14 @@ impl Item for Typedef {
         erased: &mut KnownErasedTypes,
         generics: &[GenericArgument],
     ) {
-        warn!("Before erasing types: {:?}", self);
-        let mappings = self.generic_params.call(self.path.name(), generics);
+        let generics = MaybeDefaultGenericAguments::new(&self.generic_params, generics);
+        let mappings = self
+            .generic_params
+            .call(self.path.name(), generics.as_slice());
+        warn!(
+            "Before erasing types: {:?}, mappings are {:?}",
+            self, mappings
+        );
         erased.erase_types_inplace(library, &mut self.aliased, &mappings);
         warn!("After erasing types: {:?}", self);
     }

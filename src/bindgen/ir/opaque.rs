@@ -99,6 +99,10 @@ impl Item for OpaqueItem {
     ) {
         // Nothing to do here, because we don't (transitively) embed any types and
         // `Type::erased_types` takes care of erasing generic args for us.
+        warn!(
+            "Not attempting to erase opaque type {:?} with generics {:?}",
+            self, _generics
+        );
     }
 
     fn rename_for_config(&mut self, config: &Config) {
