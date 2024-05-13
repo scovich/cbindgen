@@ -85,6 +85,10 @@ impl Typedef {
         }
     }
 
+    pub fn is_transparent(&self, config: &Config) -> bool {
+        config.export.transparent_typedef(&self.annotations)
+    }
+
     pub fn add_monomorphs(&self, library: &Library, out: &mut Monomorphs) {
         // Generic structs can instantiate monomorphs only once they've been
         // instantiated. See `instantiate_monomorph` for more details.

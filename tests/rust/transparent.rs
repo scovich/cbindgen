@@ -22,30 +22,30 @@ struct TransparentPointerWrappingStructure { only_field: *const u32 }
 
 // Transparent structure wrapping a non-null pointer
 #[repr(transparent)]
-/// cbindgen:erase-type
+/// cbindgen:transparent-typedef
 struct ErasedTransparentNonNullPointerWrappingStructure { only_field: NonNull<u32> }
 
 // Transparent structure wrapping an optional non-null pointer
 #[repr(transparent)]
-/// cbindgen:erase-type
+/// cbindgen:transparent-typedef
 struct ErasedTransparentOptionalNonNullPointerWrappingStructure { only_field: Option<NonNull<u32>> }
 
 // Transparent structure wrapping another transparent structure.
 #[repr(transparent)]
-/// cbindgen:erase-type
+/// cbindgen:transparent-typedef
 struct ErasedTransparentWrappingAnotherTransparentStructure { only_field: TransparentPrimitiveWrappingStructure }
 
 // Transparent structure wrapping a transparent non-null pointer structure.
-/// cbindgen:erase-type
+/// cbindgen:transparent-typedef
 #[repr(transparent)]
 struct ErasedTransparentWrappingTransparentNonNullPointerStructure { only_field: ErasedTransparentNonNullPointerWrappingStructure }
 
 // Transparent structure wrapping another type
 #[repr(transparent)]
-/// cbindgen:erase-type
+/// cbindgen:transparent-typedef
 struct ErasedTransparentWrappingAnotherType<T> { only_field: T }
 
-/// cbindgen:erase-type
+/// cbindgen:transparent-typedef
 type TransparentInt = ErasedTransparentWrappingAnotherType<i32>;
 type TransparentComplex = ErasedTransparentWrappingAnotherType<DummyStruct>;
 type TransparentTransparent = ErasedTransparentWrappingAnotherType<TransparentPrimitiveWrappingStructure>;
@@ -91,7 +91,7 @@ impl EnumWithAssociatedConstantInImpl {
 }
 
 #[repr(transparent)]
-/// cbindgen:erase-type
+/// cbindgen:transparent-typedef
 enum ErasedTransparentEnumTuple {
     A(i32),
 }
@@ -102,7 +102,7 @@ enum TransparentEnumStruct {
 }
 
 #[repr(transparent)]
-/// cbindgen:erase-type
+/// cbindgen:transparent-typedef
 enum ErasedTransparentEnumStruct {
     A { only_field: NonNull<TransparentInt> },
 }

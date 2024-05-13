@@ -454,9 +454,9 @@ impl Parse {
         ));
     }
 
-    fn add_erased_typedef(&mut self, name: &str, aliased: Type, generics: &[&str]) {
+    fn add_transparent_typedef(&mut self, name: &str, aliased: Type, generics: &[&str]) {
         let mut annotations = AnnotationSet::new();
-        annotations.add_default("erase-type", AnnotationValue::Bool(true));
+        annotations.add_default("transparent-typedef", AnnotationValue::Bool(true));
         self.typedefs.try_insert(Typedef::new(
             Path::new(name),
             GenericParams(Self::create_generic_params(generics)),
@@ -473,7 +473,7 @@ impl Parse {
             kind,
             signed,
         });
-        self.add_erased_typedef(name, aliased, &[]);
+        self.add_transparent_typedef(name, aliased, &[]);
     }
 
     pub fn add_std_types(&mut self, language: Language) {
@@ -505,7 +505,7 @@ impl Parse {
             self.add_opaque("Pin", &["T"]);
         } else {
             // Box<T> acts like NonNull<T> in C
-            self.add_erased_typedef(
+            self.add_transparent_typedef(
                 "Box",
                 Type::Path(GenericPath::new(
                     Path::new("NonNull"),
@@ -513,13 +513,13 @@ impl Parse {
                 )),
                 &["T"],
             );
-            self.add_erased_typedef("ManuallyDrop", tpath.clone(), &["T"]);
-            self.add_erased_typedef("MaybeUninit", tpath.clone(), &["T"]);
-            self.add_erased_typedef("Pin", tpath.clone(), &["T"]);
+            self.add_transparent_typedef("ManuallyDrop", tpath.clone(), &["T"]);
+            self.add_transparent_typedef("MaybeUninit", tpath.clone(), &["T"]);
+            self.add_transparent_typedef("Pin", tpath.clone(), &["T"]);
         }
 
         // Well-known and always-erased types
-        self.add_erased_typedef("Cell", tpath.clone(), &["T"]);
+        self.add_transparent_typedef("Cell", tpath.clone(), &["T"]);
 
         self.add_nonzero("NonZeroU8", IntKind::B8, false);
         self.add_nonzero("NonZeroU16", IntKind::B16, false);

@@ -8,7 +8,7 @@ use crate::bindgen::config::Config;
 use crate::bindgen::declarationtyperesolver::DeclarationTypeResolver;
 use crate::bindgen::dependencies::Dependencies;
 use crate::bindgen::ir::{
-    GenericArgument, GenericParams, GenericPath, Item, ItemContainer, KnownErasedTypes,
+    GenericArgument, GenericParams, GenericPath, ItemContainer, KnownErasedTypes,
     MaybeDefaultGenericAguments, Path,
 };
 use crate::bindgen::library::Library;
@@ -566,12 +566,6 @@ impl Type {
         mappings: &[(&Path, &GenericArgument)],
         erased: &mut KnownErasedTypes,
     ) -> Option<Type> {
-        let should_erase_type = |item: &dyn Item| {
-            library
-                .get_config()
-                .export
-                .erase_transparent_types(item.annotations())
-        };
         warn!("Type::erase_types for {:?}", self);
         match *self {
             Type::Ptr {
@@ -651,7 +645,7 @@ impl Type {
                                     _ => {}
                                 }
                             }
-                            ItemContainer::Typedef(t) if should_erase_type(t) => {
+                            ItemContainer::Typedef(t) if t.is_transparent(library.get_config()) => {
                                 if t.path.name() == "Alias" {
                                     warn!("Alias: {:?}", t)
                                 }
