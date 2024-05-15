@@ -4,6 +4,9 @@
 #include <ostream>
 #include <new>
 
+template<typename T = void>
+struct Box;
+
 struct DummyStruct;
 
 struct EnumWithAssociatedConstantInImpl;
@@ -28,11 +31,28 @@ constexpr static const TransparentPrimitiveWithAssociatedConstants TransparentPr
 
 using TransparentPointerWrappingStructure = const uint32_t*;
 
-using TransparentNonNullPointerWrappingStructure = uint32_t*;
+struct EnumStruct {
+  enum class Tag {
+    A,
+  };
+
+  struct A_Body {
+    uint8_t only_field;
+  };
+
+  Tag tag;
+  union {
+    A_Body a;
+  };
+};
+
+using TransparentEnumStruct = int32_t*;
 
 constexpr static const TransparentPrimitiveWrappingStructure EnumWithAssociatedConstantInImpl_TEN = 10;
 
 extern "C" {
+
+void simple_root(int32_t n);
 
 void root(TransparentComplexWrappingStructTuple a,
           TransparentPrimitiveWrappingStructTuple b,
@@ -43,6 +63,18 @@ void root(TransparentComplexWrappingStructTuple a,
           TransparentPrimitiveWithAssociatedConstants g,
           EnumWithAssociatedConstantInImpl h,
           TransparentPointerWrappingStructure i,
-          TransparentNonNullPointerWrappingStructure j);
+          uint32_t *j,
+          uint32_t *k,
+          uint32_t *l,
+          TransparentPrimitiveWrappingStructure m,
+          uint32_t *n,
+          int32_t o,
+          int32_t p,
+          int32_t *q,
+          EnumStruct r,
+          TransparentEnumStruct s,
+          const Box<int32_t> *t,
+          int32_t u,
+          uint8_t v);
 
 }  // extern "C"

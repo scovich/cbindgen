@@ -30,9 +30,21 @@ cdef extern from *:
 
   ctypedef const uint32_t *TransparentPointerWrappingStructure;
 
-  ctypedef uint32_t *TransparentNonNullPointerWrappingStructure;
+  ctypedef enum EnumStruct_Tag:
+    A,
+
+  ctypedef struct A_Body:
+    uint8_t only_field;
+
+  ctypedef struct EnumStruct:
+    EnumStruct_Tag tag;
+    A_Body a;
+
+  ctypedef int32_t *TransparentEnumStruct;
 
   const TransparentPrimitiveWrappingStructure EnumWithAssociatedConstantInImpl_TEN # = 10
+
+  void simple_root(int32_t n);
 
   void root(TransparentComplexWrappingStructTuple a,
             TransparentPrimitiveWrappingStructTuple b,
@@ -43,4 +55,16 @@ cdef extern from *:
             TransparentPrimitiveWithAssociatedConstants g,
             EnumWithAssociatedConstantInImpl h,
             TransparentPointerWrappingStructure i,
-            TransparentNonNullPointerWrappingStructure j);
+            uint32_t *j,
+            uint32_t *k,
+            uint32_t *l,
+            TransparentPrimitiveWrappingStructure m,
+            uint32_t *n,
+            int32_t o,
+            int32_t p,
+            int32_t *q,
+            EnumStruct r,
+            TransparentEnumStruct s,
+            int32_t *const *t,
+            int32_t u,
+            uint8_t v);
