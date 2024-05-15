@@ -264,6 +264,11 @@ pub struct KnownErasedTypes {
 }
 
 impl KnownErasedTypes {
+    pub fn is_erased(&self, path: &Path) -> bool {
+        let path = Type::Path(GenericPath::new(path.clone(), vec![]));
+        self.known_types.contains_key(&path)
+    }
+
     pub fn erase_types_inplace(
         &mut self,
         library: &Library,

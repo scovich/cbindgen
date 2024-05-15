@@ -574,6 +574,10 @@ impl Item for Constant {
         &mut self.annotations
     }
 
+    fn documentation(&self) -> &Documentation {
+        &self.documentation
+    }
+
     fn container(&self) -> ItemContainer {
         ItemContainer::Constant(self.clone())
     }
@@ -590,8 +594,8 @@ impl Item for Constant {
         self.ty.resolve_declaration_types(resolver);
     }
 
-    fn is_generic(&self) -> bool {
-        false
+    fn generic_params(&self) -> Option<&GenericParams> {
+        None
     }
 
     fn erase_types_inplace(
@@ -600,7 +604,26 @@ impl Item for Constant {
         erased: &mut KnownErasedTypes,
         _generics: &[GenericArgument],
     ) {
-        erased.erase_types_inplace(library, &mut self.ty, &[]);
+        if let Some(erased_ty) = erased.erase_types(library, &self.ty, &[]) {
+            // This constant's type is an erased transparent struct, so we need to simplify the
+            // initializer's literal to match; e.g. `pub const FOO: Transparent = Transparent { f:
+            // 42 }` should simplify to just `pub const FOO: Transparent = 42`.
+            let mut value = &self.value;
+            while let Literal::Struct { path, fields, .. } = value {
+                if !erased.is_erased(path) {
+                    break;
+                }
+                value = fields.iter().next().unwrap().1;
+            }
+            warn!(
+                "= = = Simplified {} literal {:?} to {:?}",
+                self.name(),
+                self.value,
+                value
+            );
+            self.value = value.clone();
+            self.ty = erased_ty;
+        }
     }
 }
 
@@ -676,14 +699,13 @@ impl Constant {
             Cow::Owned(format!("{}_{}", associated_name, self.export_name()))
         };
 
-        let value = match self.value {
-            Literal::Struct {
-                ref fields,
-                ref path,
-                ..
-            } if out.bindings().struct_is_transparent(path) => fields.iter().next().unwrap().1,
-            _ => &self.value,
-        };
+        let mut value = &self.value;
+        while let Literal::Struct { path, fields, .. } = value {
+            if !out.bindings().struct_is_transparent(path) {
+                break;
+            }
+            value = fields.iter().next().unwrap().1
+        }
 
         language_backend.write_documentation(out, &self.documentation);
 

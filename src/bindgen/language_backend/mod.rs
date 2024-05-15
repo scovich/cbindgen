@@ -139,6 +139,45 @@ pub trait LanguageBackend: Sized {
         }
     }
 
+    /// If the struct is transparent, emit a typedef of its NZT field type instead.
+    fn write_struct_or_typedef<W: Write>(
+        &mut self,
+        out: &mut SourceWriter<W>,
+        s: &Struct,
+        b: &Bindings,
+    ) {
+        if let Some(typedef) = s.as_transparent_typedef() {
+            self.write_type_def(out, &typedef);
+            for constant in &s.associated_constants {
+                out.new_line();
+                constant.write(&b.config, self, out, Some(s));
+            }
+        } else {
+            self.write_struct(out, s);
+        }
+    }
+
+    /// If the struct is transparent, emit a typedef of its NZT field type instead.
+    fn write_enum_or_typedef<W: Write>(
+        &mut self,
+        out: &mut SourceWriter<W>,
+        e: &Enum,
+        _b: &Bindings,
+    ) {
+        if let Some(typedef) = e.as_transparent_typedef() {
+            self.write_type_def(out, &typedef);
+            // TODO: Associated constants are not supported for enums. Should they be? Rust
+            // enum exports as a union, and C/C++ at least supports static union members?
+            //
+            //for constant in &e.associated_constants {
+            //    out.new_line();
+            //    constant.write(b.config, self, out, Some(e));
+            //}
+        } else {
+            self.write_enum(out, e);
+        }
+    }
+
     fn write_items<W: Write>(&mut self, out: &mut SourceWriter<W>, b: &Bindings) {
         for item in &b.items {
             if item
@@ -154,8 +193,8 @@ pub trait LanguageBackend: Sized {
             match *item {
                 ItemContainer::Constant(..) => unreachable!(),
                 ItemContainer::Static(..) => unreachable!(),
-                ItemContainer::Enum(ref x) => self.write_enum(out, x),
-                ItemContainer::Struct(ref x) => self.write_struct(out, x),
+                ItemContainer::Enum(ref x) => self.write_enum_or_typedef(out, x, b),
+                ItemContainer::Struct(ref x) => self.write_struct_or_typedef(out, x, b),
                 ItemContainer::Union(ref x) => self.write_union(out, x),
                 ItemContainer::OpaqueItem(ref x) => self.write_opaque_item(out, x),
                 ItemContainer::Typedef(ref x) => self.write_type_def(out, x),

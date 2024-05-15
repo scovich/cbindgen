@@ -10,7 +10,7 @@ use crate::bindgen::config::Config;
 use crate::bindgen::declarationtyperesolver::DeclarationTypeResolver;
 use crate::bindgen::dependencies::Dependencies;
 use crate::bindgen::ir::{
-    AnnotationSet, Cfg, Documentation, GenericArgument, GenericParams, Item, ItemContainer,
+    AnnotationSet, Cfg, Documentation, Field, GenericArgument, GenericParams, Item, ItemContainer,
     KnownErasedTypes, MaybeDefaultGenericAguments, Path, Type,
 };
 use crate::bindgen::library::Library;
@@ -66,6 +66,22 @@ impl Typedef {
         }
     }
 
+    pub fn new_from_item_field(item: &impl Item, field: &Field) -> Self {
+        let generic_params = match item.generic_params() {
+            Some(x) => x.clone(),
+            None => GenericParams::default(),
+        };
+        Self {
+            path: item.path().clone(),
+            export_name: item.export_name().to_string(),
+            generic_params,
+            aliased: field.ty.clone(),
+            cfg: item.cfg().cloned(),
+            annotations: item.annotations().clone(),
+            documentation: item.documentation().clone(),
+        }
+    }
+
     pub fn transfer_annotations(&mut self, out: &mut HashMap<Path, AnnotationSet>) {
         if self.annotations.is_empty() {
             return;
@@ -87,6 +103,17 @@ impl Typedef {
 
     pub fn is_transparent(&self, config: &Config) -> bool {
         config.export.transparent_typedef(&self.annotations)
+    }
+
+    /// Returns the aliased type if this typedef is transparent, else None.
+    pub fn try_erase_type(&self, generics: &[GenericArgument], config: &Config) -> Option<Type> {
+        if !self.is_transparent(config) {
+            return None;
+        }
+
+        let generics = MaybeDefaultGenericAguments::new(&self.generic_params, generics);
+        let mappings = self.generic_params.call(self.name(), generics.as_slice());
+        Some(self.aliased.specialize(&mappings))
     }
 
     pub fn add_monomorphs(&self, library: &Library, out: &mut Monomorphs) {
@@ -125,6 +152,10 @@ impl Item for Typedef {
         &mut self.annotations
     }
 
+    fn documentation(&self) -> &Documentation {
+        &self.documentation
+    }
+
     fn container(&self) -> ItemContainer {
         ItemContainer::Typedef(self.clone())
     }
@@ -137,8 +168,8 @@ impl Item for Typedef {
         self.aliased.resolve_declaration_types(resolver);
     }
 
-    fn is_generic(&self) -> bool {
-        self.generic_params.len() > 0
+    fn generic_params(&self) -> Option<&GenericParams> {
+        Some(&self.generic_params)
     }
 
     fn erase_types_inplace(

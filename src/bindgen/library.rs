@@ -381,9 +381,7 @@ impl Library {
             if item.name() == "Foo" {
                 warn!("FOO: {:?}", item);
             }
-            if !item.is_generic() {
-                item.clone().erase_types_inplace(self, erased, &[]);
-            }
+            item.clone().erase_types_inplace(self, erased, &[]);
         });
     }
 

@@ -12,7 +12,7 @@ use crate::bindgen::dependencies::Dependencies;
 use crate::bindgen::ir::{
     AnnotationSet, AnnotationValue, Cfg, ConditionWrite, DeprecatedNoteKind, Documentation, Field,
     GenericArgument, GenericParams, GenericPath, Item, ItemContainer, KnownErasedTypes, Literal,
-    MaybeDefaultGenericAguments, Path, Repr, ReprStyle, Struct, ToCondition, Type,
+    MaybeDefaultGenericAguments, Path, Repr, ReprStyle, Struct, ToCondition, Type, Typedef,
 };
 use crate::bindgen::language_backend::LanguageBackend;
 use crate::bindgen::library::Library;
@@ -442,6 +442,31 @@ impl Enum {
             documentation,
         }
     }
+
+    /// Attempts to convert this enum to a typedef (only works for transparent enums).
+    pub fn as_transparent_typedef(&self) -> Option<Typedef> {
+        if self.is_transparent() {
+            // NOTE: A `#[repr(transparent)]` enum fails to compile unless it has
+            // exactly one NZT variant. So we can safely assume the variant exists.
+            if let Some(EnumVariant {
+                body: VariantBody::Body { ref body, .. },
+                ..
+            }) = self.variants.first()
+            {
+                // NOTE: Inline tagged enum has the tag field first, ignore it.
+                if let Some(field) = body.fields.last() {
+                    return Some(Typedef::new_from_item_field(self, field));
+                }
+            }
+        }
+        None
+    }
+
+    // Transparent enums become typedefs, so try converting to typedef erasing that.
+    pub fn try_erase_type(&self, generics: &[GenericArgument], config: &Config) -> Option<Type> {
+        self.as_transparent_typedef()
+            .and_then(|t| t.try_erase_type(generics, config))
+    }
 }
 
 impl Item for Enum {
@@ -465,12 +490,18 @@ impl Item for Enum {
         &mut self.annotations
     }
 
+    fn documentation(&self) -> &Documentation {
+        &self.documentation
+    }
+
     fn container(&self) -> ItemContainer {
         ItemContainer::Enum(self.clone())
     }
 
     fn collect_declaration_types(&self, resolver: &mut DeclarationTypeResolver) {
-        if self.tag.is_some() {
+        if self.repr.style == ReprStyle::Transparent {
+            resolver.add_none(&self.path);
+        } else if self.tag.is_some() {
             if self.repr.style == ReprStyle::C {
                 resolver.add_struct(&self.path);
             } else {
@@ -490,8 +521,8 @@ impl Item for Enum {
         }
     }
 
-    fn is_generic(&self) -> bool {
-        self.generic_params.len() > 0
+    fn generic_params(&self) -> Option<&GenericParams> {
+        Some(&self.generic_params)
     }
 
     fn erase_types_inplace(

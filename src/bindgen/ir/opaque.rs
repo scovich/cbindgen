@@ -7,7 +7,7 @@ use crate::bindgen::declarationtyperesolver::DeclarationTypeResolver;
 use crate::bindgen::dependencies::Dependencies;
 use crate::bindgen::ir::{
     AnnotationSet, Cfg, Documentation, GenericArgument, GenericParams, Item, ItemContainer,
-    KnownErasedTypes, Path,
+    KnownErasedTypes, Path, Type,
 };
 use crate::bindgen::library::Library;
 use crate::bindgen::mangle;
@@ -56,6 +56,36 @@ impl OpaqueItem {
             documentation,
         }
     }
+
+    pub fn try_erase_type(&self, generics: &[GenericArgument], _config: &Config) -> Option<Type> {
+        if let Some(GenericArgument::Type(ref ty)) = generics.first() {
+            match self.name() {
+                "Option" => {
+                    if let Some(nullable) = ty.make_nullable() {
+                        return Some(nullable);
+                    }
+                    if let Some(zeroable) = ty.make_zeroable(true) {
+                        return Some(zeroable);
+                    }
+                }
+                "NonNull" => {
+                    return Some(Type::Ptr {
+                        ty: Box::new(ty.clone()),
+                        is_const: false,
+                        is_nullable: false,
+                        is_ref: false,
+                    })
+                }
+                "NonZero" => {
+                    if let Some(nonzero) = ty.make_zeroable(false) {
+                        return Some(nonzero);
+                    }
+                }
+                _ => {}
+            }
+        }
+        None
+    }
 }
 
 impl Item for OpaqueItem {
@@ -79,6 +109,10 @@ impl Item for OpaqueItem {
         &mut self.annotations
     }
 
+    fn documentation(&self) -> &Documentation {
+        &self.documentation
+    }
+
     fn container(&self) -> ItemContainer {
         ItemContainer::OpaqueItem(self.clone())
     }
@@ -87,8 +121,8 @@ impl Item for OpaqueItem {
         resolver.add_struct(&self.path);
     }
 
-    fn is_generic(&self) -> bool {
-        self.generic_params.len() > 0
+    fn generic_params(&self) -> Option<&GenericParams> {
+        Some(&self.generic_params)
     }
 
     fn erase_types_inplace(

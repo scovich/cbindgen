@@ -134,6 +134,10 @@ impl Item for Union {
         &mut self.annotations
     }
 
+    fn documentation(&self) -> &Documentation {
+        &self.documentation
+    }
+
     fn container(&self) -> ItemContainer {
         ItemContainer::Union(self.clone())
     }
@@ -148,8 +152,8 @@ impl Item for Union {
         }
     }
 
-    fn is_generic(&self) -> bool {
-        self.generic_params.len() > 0
+    fn generic_params(&self) -> Option<&GenericParams> {
+        Some(&self.generic_params)
     }
 
     fn erase_types_inplace(

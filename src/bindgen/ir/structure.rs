@@ -12,7 +12,7 @@ use crate::bindgen::dependencies::Dependencies;
 use crate::bindgen::ir::{
     AnnotationSet, Cfg, Constant, Documentation, Field, GenericArgument, GenericParams, Item,
     ItemContainer, KnownErasedTypes, MaybeDefaultGenericAguments, Path, Repr, ReprAlign, ReprStyle,
-    Type,
+    Type, Typedef,
 };
 use crate::bindgen::library::Library;
 use crate::bindgen::mangle;
@@ -145,6 +145,29 @@ impl Struct {
         }
     }
 
+    /// Attempts to convert this struct to a typedef (only works for transparent structs).
+    pub fn as_transparent_typedef(&self) -> Option<Typedef> {
+        if self.is_transparent {
+            // NOTE: A `#[repr(transparent)]` struct with 2+ NZT fields fails to compile, but 0
+            // fields is allowed for some strange reason. Don't emit the typedef in that case.
+            if let Some(field) = self.fields.first() {
+                return Some(Typedef::new_from_item_field(self, field));
+            } else {
+                error!(
+                    "Cannot convert empty transparent struct {} to typedef",
+                    self.name()
+                );
+            }
+        }
+        None
+    }
+
+    // Transparent structs become typedefs, so try converting to typedef erasing that.
+    pub fn try_erase_type(&self, generics: &[GenericArgument], config: &Config) -> Option<Type> {
+        self.as_transparent_typedef()
+            .and_then(|t| t.try_erase_type(generics, config))
+    }
+
     pub fn add_monomorphs(&self, library: &Library, out: &mut Monomorphs) {
         // Generic structs can instantiate monomorphs only once they've been
         // instantiated. See `instantiate_monomorph` for more details.
@@ -257,6 +280,10 @@ impl Item for Struct {
         &mut self.annotations
     }
 
+    fn documentation(&self) -> &Documentation {
+        &self.documentation
+    }
+
     fn container(&self) -> ItemContainer {
         ItemContainer::Struct(self.clone())
     }
@@ -275,8 +302,8 @@ impl Item for Struct {
         }
     }
 
-    fn is_generic(&self) -> bool {
-        self.generic_params.len() > 0
+    fn generic_params(&self) -> Option<&GenericParams> {
+        Some(&self.generic_params)
     }
 
     fn erase_types_inplace(

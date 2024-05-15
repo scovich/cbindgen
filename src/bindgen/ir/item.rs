@@ -9,8 +9,8 @@ use crate::bindgen::config::Config;
 use crate::bindgen::declarationtyperesolver::DeclarationTypeResolver;
 use crate::bindgen::dependencies::Dependencies;
 use crate::bindgen::ir::{
-    AnnotationSet, Cfg, Constant, Enum, GenericArgument, KnownErasedTypes, OpaqueItem, Path,
-    Static, Struct, Typedef, Union,
+    AnnotationSet, Cfg, Constant, Documentation, Enum, GenericArgument, GenericParams,
+    KnownErasedTypes, OpaqueItem, Path, Static, Struct, Typedef, Union,
 };
 use crate::bindgen::library::Library;
 use crate::bindgen::monomorph::Monomorphs;
@@ -27,6 +27,7 @@ pub trait Item {
     fn cfg(&self) -> Option<&Cfg>;
     fn annotations(&self) -> &AnnotationSet;
     fn annotations_mut(&mut self) -> &mut AnnotationSet;
+    fn documentation(&self) -> &Documentation;
 
     fn container(&self) -> ItemContainer;
 
@@ -46,7 +47,13 @@ pub trait Item {
         erased: &mut KnownErasedTypes,
         generics: &[GenericArgument],
     );
-    fn is_generic(&self) -> bool;
+
+    fn generic_params(&self) -> Option<&GenericParams>;
+
+    fn is_generic(&self) -> bool {
+        self.generic_params()
+            .is_some_and(|params| !params.is_empty())
+    }
 
     fn rename_for_config(&mut self, _config: &Config) {}
     fn add_dependencies(&self, _library: &Library, _out: &mut Dependencies) {}

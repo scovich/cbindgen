@@ -8,8 +8,7 @@ use crate::bindgen::config::Config;
 use crate::bindgen::declarationtyperesolver::DeclarationTypeResolver;
 use crate::bindgen::dependencies::Dependencies;
 use crate::bindgen::ir::{
-    GenericArgument, GenericParams, GenericPath, ItemContainer, KnownErasedTypes,
-    MaybeDefaultGenericAguments, Path,
+    GenericArgument, GenericParams, GenericPath, ItemContainer, KnownErasedTypes, Path,
 };
 use crate::bindgen::library::Library;
 use crate::bindgen::monomorph::Monomorphs;
@@ -593,7 +592,7 @@ impl Type {
                         // First, erase the generic args themselves. This is nice for most Item
                         // types, but crucial for `OpaqueItem` that would otherwise miss out.
                         let mut did_erase_generics = false;
-                        let erased_generics: Vec<_> = path
+                        let generics: Vec<_> = path
                             .generics()
                             .iter()
                             .map(|g| match g {
@@ -609,79 +608,26 @@ impl Type {
                             })
                             .collect();
 
-                        // Process typedefs marked for erasure. Additionally, some of the opaque
-                        // standard types can be erased, given the right underlying type.
-                        //
-                        // NOTE: Any erasable transparent struct or enum was already converted to a
-                        // typedef at parsing time, so we can ignore structs and enums here.
-                        match item {
-                            ItemContainer::OpaqueItem(o) => {
-                                let generic = match erased_generics.first() {
-                                    Some(GenericArgument::Type(ref ty)) => ty,
-                                    _ => return None,
-                                };
-                                match o.path.name() {
-                                    "Option" => {
-                                        if let Some(nullable) = generic.make_nullable() {
-                                            return Some(nullable);
-                                        }
-                                        if let Some(zeroable) = generic.make_zeroable(true) {
-                                            return Some(zeroable);
-                                        }
-                                    }
-                                    "NonNull" => {
-                                        return Some(Type::Ptr {
-                                            ty: Box::new(generic.clone()),
-                                            is_const: false,
-                                            is_nullable: false,
-                                            is_ref: false,
-                                        })
-                                    }
-                                    "NonZero" => {
-                                        if let Some(nonzero) = generic.make_zeroable(false) {
-                                            return Some(nonzero);
-                                        }
-                                    }
-                                    _ => {}
-                                }
-                            }
-                            ItemContainer::Typedef(t) if t.is_transparent(library.get_config()) => {
-                                if t.path.name() == "Alias" {
-                                    warn!("Alias: {:?}", t)
-                                }
-                                let erased_generics = MaybeDefaultGenericAguments::new(
-                                    &t.generic_params,
-                                    &erased_generics,
-                                );
-                                warn!(
-                                    "Erasing types for typedef {:?} with generics {:?}",
-                                    t,
-                                    erased_generics.as_slice()
-                                );
-                                let mappings = t
-                                    .generic_params
-                                    .call(t.path.name(), erased_generics.as_slice());
-                                let aliased = t.aliased.specialize(&mappings);
-                                warn!(
-                                    "Erasing typedef {:?} as {:?} with mappings {:?}",
-                                    path, aliased, mappings
-                                );
-                                return Some(aliased);
-                            }
-                            ItemContainer::Typedef(t) => {
-                                if t.path.name() == "Alias" {
-                                    warn!("Did not erase Alias: {:?}", t)
-                                }
-                            }
-                            _ => {}
-                        }
-
-                        // Even if the path was not erased, some of its generics may have been.
-                        if did_erase_generics {
-                            return Some(Type::Path(GenericPath::new(
-                                path.path().clone(),
-                                erased_generics,
-                            )));
+                        // Process transparent types marked for erasure. Additionally, some of the
+                        // opaque standard types can be erased, given the right underlying type.
+                        let config = library.get_config();
+                        let erased_ty = match item {
+                            ItemContainer::OpaqueItem(o) => o.try_erase_type(&generics, config),
+                            ItemContainer::Typedef(t) => t.try_erase_type(&generics, config),
+                            ItemContainer::Struct(s) => s.try_erase_type(&generics, config),
+                            ItemContainer::Enum(e) => e.try_erase_type(&generics, config),
+                            _ => None,
+                        };
+                        if erased_ty.is_some() {
+                            warn!(
+                                "Erased {:?} as {:?} with mappings {:?}",
+                                path, erased_ty, mappings
+                            );
+                            return erased_ty;
+                        } else if did_erase_generics {
+                            // The path itself was not erased, but some of its generics were.
+                            let path = GenericPath::new(path.path().clone(), generics);
+                            return Some(Type::Path(path));
                         }
                     }
                 } else {

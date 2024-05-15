@@ -6,8 +6,8 @@ use crate::bindgen::config::Config;
 use crate::bindgen::declarationtyperesolver::DeclarationTypeResolver;
 use crate::bindgen::dependencies::Dependencies;
 use crate::bindgen::ir::{
-    AnnotationSet, Cfg, Documentation, GenericArgument, Item, ItemContainer, KnownErasedTypes,
-    Path, Type,
+    AnnotationSet, Cfg, Documentation, GenericArgument, GenericParams, Item, ItemContainer,
+    KnownErasedTypes, Path, Type,
 };
 use crate::bindgen::library::Library;
 
@@ -86,6 +86,10 @@ impl Item for Static {
         &mut self.annotations
     }
 
+    fn documentation(&self) -> &Documentation {
+        &self.documentation
+    }
+
     fn container(&self) -> ItemContainer {
         ItemContainer::Static(self.clone())
     }
@@ -98,8 +102,8 @@ impl Item for Static {
         self.ty.resolve_declaration_types(resolver);
     }
 
-    fn is_generic(&self) -> bool {
-        false
+    fn generic_params(&self) -> Option<&GenericParams> {
+        None
     }
 
     fn erase_types_inplace(
