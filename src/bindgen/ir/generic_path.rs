@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io::Write;
 use std::ops::Deref;
@@ -84,41 +85,6 @@ impl GenericParam {
     }
 }
 
-/// If `generics` is empty, create a set of "default" generic arguments, which preserves the
-/// existing parameter name. Useful to allow `call` to work when no generics are provided.
-pub struct MaybeDefaultGenericAguments<'a> {
-    generics: &'a [GenericArgument],
-    defaults: Option<Vec<GenericArgument>>,
-}
-
-impl<'a> MaybeDefaultGenericAguments<'a> {
-    pub fn new(params: &GenericParams, generics: &'a [GenericArgument]) -> Self {
-        let defaults = if generics.is_empty() && !params.is_empty() {
-            Some(
-                params
-                    .iter()
-                    .cloned()
-                    .map(|param| {
-                        GenericArgument::Type(Type::Path(GenericPath::new(
-                            param.name.clone(),
-                            vec![],
-                        )))
-                    })
-                    .collect(),
-            )
-        } else {
-            None
-        };
-        Self { generics, defaults }
-    }
-
-    pub fn as_slice(&self) -> &[GenericArgument] {
-        self.defaults
-            .as_ref()
-            .map_or(self.generics, |defaults| defaults.as_slice())
-    }
-}
-
 #[derive(Default, Debug, Clone)]
 pub struct GenericParams(pub Vec<GenericParam>);
 
@@ -132,6 +98,24 @@ impl GenericParams {
         }
 
         Ok(GenericParams(params))
+    }
+
+    /// If `generics` is empty, create a set of "default" generic arguments, which preserves the
+    /// existing parameter name. Useful to allow `call` to work when no generics are provided.
+    pub fn defaulted_generics<'a>(
+        &self,
+        generics: &'a [GenericArgument],
+    ) -> Cow<'a, [GenericArgument]> {
+        if !self.is_empty() && generics.is_empty() {
+            Cow::Owned(
+                self.iter()
+                    .map(|param| Type::Path(GenericPath::new(param.name.clone(), vec![])))
+                    .map(GenericArgument::Type)
+                    .collect(),
+            )
+        } else {
+            Cow::Borrowed(generics)
+        }
     }
 
     /// Associate each parameter with an argument.

@@ -16,8 +16,8 @@ use crate::bindgen::config::{Config, Language, ParseConfig};
 use crate::bindgen::error::Error;
 use crate::bindgen::ir::{
     AnnotationSet, AnnotationValue, Cfg, Constant, Documentation, Enum, Function, GenericArgument,
-    GenericParam, GenericParams, GenericPath, ItemMap, OpaqueItem, Path,
-    Static, Struct, Type, Typedef, Union,
+    GenericParam, GenericParams, GenericPath, ItemMap, OpaqueItem, Path, Static, Struct, Type,
+    Typedef, Union,
 };
 use crate::bindgen::utilities::{SynAbiHelpers, SynAttributeHelpers, SynItemHelpers};
 

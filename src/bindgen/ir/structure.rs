@@ -11,8 +11,7 @@ use crate::bindgen::declarationtyperesolver::DeclarationTypeResolver;
 use crate::bindgen::dependencies::Dependencies;
 use crate::bindgen::ir::{
     AnnotationSet, Cfg, Constant, Documentation, Field, GenericArgument, GenericParams, Item,
-    ItemContainer, MaybeDefaultGenericAguments, Path, Repr, ReprAlign, ReprStyle,
-    TransparentTypeEraser, Type, Typedef,
+    ItemContainer, Path, Repr, ReprAlign, ReprStyle, TransparentTypeEraser, Type, Typedef,
 };
 use crate::bindgen::library::Library;
 use crate::bindgen::mangle;
@@ -312,10 +311,8 @@ impl Item for Struct {
         eraser: &mut TransparentTypeEraser,
         generics: &[GenericArgument],
     ) {
-        let generics = MaybeDefaultGenericAguments::new(&self.generic_params, generics);
-        let mappings = self
-            .generic_params
-            .call(self.path.name(), generics.as_slice());
+        let generics = self.generic_params.defaulted_generics(generics);
+        let mappings = self.generic_params.call(self.name(), &generics);
         for field in &mut self.fields {
             eraser.erase_transparent_types_inplace(library, &mut field.ty, &mappings);
         }

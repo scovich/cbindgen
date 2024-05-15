@@ -11,9 +11,8 @@ use crate::bindgen::declarationtyperesolver::DeclarationTypeResolver;
 use crate::bindgen::dependencies::Dependencies;
 use crate::bindgen::ir::{
     AnnotationSet, AnnotationValue, Cfg, ConditionWrite, DeprecatedNoteKind, Documentation, Field,
-    GenericArgument, GenericParams, GenericPath, Item, ItemContainer, Literal,
-    MaybeDefaultGenericAguments, Path, Repr, ReprStyle, Struct, ToCondition, TransparentTypeEraser,
-    Type, Typedef,
+    GenericArgument, GenericParams, GenericPath, Item, ItemContainer, Literal, Path, Repr,
+    ReprStyle, Struct, ToCondition, TransparentTypeEraser, Type, Typedef,
 };
 use crate::bindgen::language_backend::LanguageBackend;
 use crate::bindgen::library::Library;
@@ -533,10 +532,8 @@ impl Item for Enum {
         generics: &[GenericArgument],
     ) {
         let mut skip_inline_tag_field = Self::inline_tag_field(&self.repr);
-        let generics = MaybeDefaultGenericAguments::new(&self.generic_params, generics);
-        let mappings = self
-            .generic_params
-            .call(self.path.name(), generics.as_slice());
+        let generics = self.generic_params.defaulted_generics(generics);
+        let mappings = self.generic_params.call(self.name(), &generics);
         for variant in self.variants.iter_mut() {
             if let VariantBody::Body { ref mut body, .. } = variant.body {
                 for field in body.fields.iter_mut() {

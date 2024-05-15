@@ -11,7 +11,7 @@ use crate::bindgen::declarationtyperesolver::DeclarationTypeResolver;
 use crate::bindgen::dependencies::Dependencies;
 use crate::bindgen::ir::{
     AnnotationSet, Cfg, Documentation, Field, GenericArgument, GenericParams, Item, ItemContainer,
-    MaybeDefaultGenericAguments, Path, TransparentTypeEraser, Type,
+    Path, TransparentTypeEraser, Type,
 };
 use crate::bindgen::library::Library;
 use crate::bindgen::mangle;
@@ -109,8 +109,8 @@ impl Typedef {
             .bool(Self::TRANSPARENT_TYPEDEF)
             .unwrap_or(false)
         {
-            let generics = MaybeDefaultGenericAguments::new(&self.generic_params, generics);
-            let mappings = self.generic_params.call(self.name(), generics.as_slice());
+            let generics = self.generic_params.defaulted_generics(generics);
+            let mappings = self.generic_params.call(self.name(), &generics);
             Some(self.aliased.specialize(&mappings))
         } else {
             None
@@ -179,10 +179,8 @@ impl Item for Typedef {
         eraser: &mut TransparentTypeEraser,
         generics: &[GenericArgument],
     ) {
-        let generics = MaybeDefaultGenericAguments::new(&self.generic_params, generics);
-        let mappings = self
-            .generic_params
-            .call(self.path.name(), generics.as_slice());
+        let generics = self.generic_params.defaulted_generics(generics);
+        let mappings = self.generic_params.call(self.name(), &generics);
         warn!(
             "Before erasing types: {:?}, mappings are {:?}",
             self, mappings
