@@ -120,11 +120,9 @@ impl Typedef {
     pub fn add_monomorphs(&self, library: &Library, out: &mut Monomorphs) {
         // Generic structs can instantiate monomorphs only once they've been
         // instantiated. See `instantiate_monomorph` for more details.
-        if self.is_generic() {
-            return;
+        if !self.is_generic() {
+            self.aliased.add_monomorphs(library, out);
         }
-
-        self.aliased.add_monomorphs(library, out);
     }
 
     pub fn mangle_paths(&mut self, monomorphs: &Monomorphs) {
