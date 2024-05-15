@@ -30,6 +30,9 @@ pub struct Typedef {
 }
 
 impl Typedef {
+    // Name of the annotation that identifies a transparent typedef.
+    pub const TRANSPARENT_TYPEDEF: &'static str = "transparent-typedef";
+
     pub fn load(item: &syn::ItemType, mod_cfg: Option<&Cfg>) -> Result<Typedef, String> {
         if let Some(x) = Type::load(&item.ty)? {
             let path = Path::new(item.ident.unraw().to_string());
@@ -103,7 +106,7 @@ impl Typedef {
     pub fn as_transparent_alias(&self, generics: &[GenericArgument]) -> Option<Type> {
         if self
             .annotations
-            .bool("transparent-typedef")
+            .bool(Self::TRANSPARENT_TYPEDEF)
             .unwrap_or(false)
         {
             let generics = MaybeDefaultGenericAguments::new(&self.generic_params, generics);

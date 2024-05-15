@@ -16,7 +16,7 @@ use crate::bindgen::config::{Config, Language, ParseConfig};
 use crate::bindgen::error::Error;
 use crate::bindgen::ir::{
     AnnotationSet, AnnotationValue, Cfg, Constant, Documentation, Enum, Function, GenericArgument,
-    GenericParam, GenericParams, GenericPath, IntKind, ItemMap, OpaqueItem, Path, PrimitiveType,
+    GenericParam, GenericParams, GenericPath, ItemMap, OpaqueItem, Path,
     Static, Struct, Type, Typedef, Union,
 };
 use crate::bindgen::utilities::{SynAbiHelpers, SynAttributeHelpers, SynItemHelpers};
@@ -456,7 +456,7 @@ impl Parse {
 
     fn add_transparent_typedef(&mut self, name: &str, aliased: Type, generics: &[&str]) {
         let mut annotations = AnnotationSet::new();
-        annotations.add_default("transparent-typedef", AnnotationValue::Bool(true));
+        annotations.add_default(Typedef::TRANSPARENT_TYPEDEF, AnnotationValue::Bool(true));
         self.typedefs.try_insert(Typedef::new(
             Path::new(name),
             GenericParams(Self::create_generic_params(generics)),
@@ -465,15 +465,6 @@ impl Parse {
             annotations,
             Documentation::none(),
         ));
-    }
-
-    fn add_nonzero(&mut self, name: &str, kind: IntKind, signed: bool) {
-        let aliased = Type::Primitive(PrimitiveType::Integer {
-            zeroable: false,
-            kind,
-            signed,
-        });
-        self.add_transparent_typedef(name, aliased, &[]);
     }
 
     pub fn add_std_types(&mut self, language: Language) {
@@ -491,7 +482,7 @@ impl Parse {
         self.add_opaque("LinkedList", &["T"]);
         self.add_opaque("VecDeque", &["T"]);
 
-        // Well-known types with special erasure semantics (see [Type::erase_types]).
+        // Well-known types with special erasure semantics (see [Type::erase_transparent_types]).
         self.add_opaque("Option", &["T"]);
         self.add_opaque("NonNull", &["T"]);
         self.add_opaque("NonZero", &["T"]);
@@ -505,14 +496,9 @@ impl Parse {
             self.add_opaque("Pin", &["T"]);
         } else {
             // Box<T> acts like NonNull<T> in C
-            self.add_transparent_typedef(
-                "Box",
-                Type::Path(GenericPath::new(
-                    Path::new("NonNull"),
-                    vec![GenericArgument::Type(tpath.clone())],
-                )),
-                &["T"],
-            );
+            let generics = vec![GenericArgument::Type(tpath.clone())];
+            let alias = Type::Path(GenericPath::new(Path::new("NonNull"), generics));
+            self.add_transparent_typedef("Box", alias, &["T"]);
             self.add_transparent_typedef("ManuallyDrop", tpath.clone(), &["T"]);
             self.add_transparent_typedef("MaybeUninit", tpath.clone(), &["T"]);
             self.add_transparent_typedef("Pin", tpath.clone(), &["T"]);
@@ -520,16 +506,6 @@ impl Parse {
 
         // Well-known and always-erased types
         self.add_transparent_typedef("Cell", tpath.clone(), &["T"]);
-        self.add_nonzero("NonZeroU8", IntKind::B8, false);
-        self.add_nonzero("NonZeroU16", IntKind::B16, false);
-        self.add_nonzero("NonZeroU32", IntKind::B32, false);
-        self.add_nonzero("NonZeroU64", IntKind::B64, false);
-        self.add_nonzero("NonZeroUSize", IntKind::Size, false);
-        self.add_nonzero("NonZeroI8", IntKind::B8, true);
-        self.add_nonzero("NonZeroI16", IntKind::B16, true);
-        self.add_nonzero("NonZeroI32", IntKind::B32, true);
-        self.add_nonzero("NonZeroI64", IntKind::B64, true);
-        self.add_nonzero("NonZeroISize", IntKind::Size, true);
     }
 
     pub fn extend_with(&mut self, other: &Parse) {

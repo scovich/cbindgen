@@ -140,4 +140,5 @@ pub extern "C" fn root(
     r: TransparentEnumStruct,
     s: Box<i32>,
     t: ErasedTransparentWrappingAnotherType<ErasedTransparentInt>,
+    u: NonZeroU8,
 ) { }
