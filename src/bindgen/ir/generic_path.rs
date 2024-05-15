@@ -150,6 +150,7 @@ impl GenericParams {
         self.iter()
             .enumerate()
             .map(|(i, param)| {
+                // Fall back to the GenericParam default if no GenericArgument is available.
                 let arg = arguments
                     .get(i)
                     .or(param.default.as_ref())
@@ -249,89 +250,56 @@ impl GenericArgument {
 
     pub fn rename_for_config(&mut self, config: &Config, generic_params: &GenericParams) {
         match *self {
-            //GenericArgument::Generic(ref param) => warn!("Cannot rename generic param {:?}", param),
             GenericArgument::Type(ref mut ty) => ty.rename_for_config(config, generic_params),
             GenericArgument::Const(ref mut expr) => expr.rename_for_config(config),
         }
     }
 }
 
+/// Helper for erasing transparent types, which memoizes already-seen types to avoid repeated work.
 #[derive(Default)]
-pub struct KnownErasedTypes {
+pub struct TransparentTypeEraser {
     // Remember paths we've already visited, so we don't repeat unnecessary work.
     // TODO: how to handle recursive types such as `struct Foo { next: Box<Foo> }`?
     known_types: HashMap<Type, Option<Type>>,
 }
 
-impl KnownErasedTypes {
-    pub fn is_erased(&self, path: &Path) -> bool {
-        let path = Type::Path(GenericPath::new(path.clone(), vec![]));
-        self.known_types.contains_key(&path)
-    }
-
-    pub fn erase_types_inplace(
+impl TransparentTypeEraser {
+    pub fn erase_transparent_types_inplace(
         &mut self,
         library: &Library,
         target: &mut Type,
         mappings: &[(&Path, &GenericArgument)],
     ) {
-        if let Some(erased_type) = self.erase_types(library, target, mappings) {
+        if let Some(erased_type) = self.erase_transparent_types(library, target, mappings) {
             warn!("Replacing {:?} with {:?}", target, erased_type);
             *target = erased_type;
         }
     }
+
     #[must_use]
-    pub fn erase_types(
+    pub fn erase_transparent_types(
         &mut self,
         library: &Library,
         target: &Type,
         mappings: &[(&Path, &GenericArgument)],
     ) -> Option<Type> {
-        // NOTE: If there are template type mappings, apply them before performing type erasure and
-        // cache the result of _that_ replacement; the target will be replaced with the erased type
-        // (if any), or else the specialized type (if any).
-        let specialized = if mappings.is_empty() {
-            None
+        let known_type = self.known_types.get(target);
+        let unknown_type = known_type.is_none();
+        let erased_type = if let Some(ty) = known_type {
+            ty.clone()
         } else {
-            let specialized = target.specialize(mappings);
-            if specialized != *target {
-                warn!(
-                    "specialized {:?} as {:?} using mappings {:?}",
-                    target, specialized, mappings
-                );
-                Some(specialized)
-            } else {
-                None
-            }
-        };
-        //let target = specialized.as_ref().unwrap_or(target);
-        let maybe_known_type = self.known_types.get(target);
-        let unknown_type = maybe_known_type.is_none();
-        let erased_type: Option<Type> = if let Some(known_type) = maybe_known_type {
-            known_type.clone()
-        } else {
-            let mut erased_ty = target.erase_types(library, mappings, self);
-            while let Some(ref ty) = erased_ty {
-                match ty.erase_types(library, mappings, self) {
-                    Some(ty) => {
-                        warn!("Erased type {:?} is itself erasable as {:?}", erased_ty, ty);
-                        erased_ty = Some(ty);
-                    }
-                    None => break,
-                }
-            }
-            if let Type::Path(path) = target {
-                if path.name() == "T" {
-                    warn!("^^^ Replacing a template param!\n");
-                }
-            };
-            erased_ty
+            warn!(
+                "Try to erase previously unknown type {:?} with mappings {:?}",
+                target, mappings
+            );
+            target.erase_transparent_types(library, mappings, self)
         };
         if unknown_type {
             warn!("Caching erasure of {:?} as {:?}", target, erased_type);
             self.known_types.insert(target.clone(), erased_type.clone());
         }
-        erased_type.or(specialized)
+        erased_type
     }
 }
 

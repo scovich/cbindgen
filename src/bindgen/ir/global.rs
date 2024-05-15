@@ -6,8 +6,8 @@ use crate::bindgen::config::Config;
 use crate::bindgen::declarationtyperesolver::DeclarationTypeResolver;
 use crate::bindgen::dependencies::Dependencies;
 use crate::bindgen::ir::{
-    AnnotationSet, Cfg, Documentation, GenericArgument, GenericParams, Item, ItemContainer,
-    KnownErasedTypes, Path, Type,
+    AnnotationSet, Cfg, Documentation, GenericArgument, GenericParams, Item, ItemContainer, Path,
+    TransparentTypeEraser, Type,
 };
 use crate::bindgen::library::Library;
 
@@ -106,13 +106,13 @@ impl Item for Static {
         None
     }
 
-    fn erase_types_inplace(
+    fn erase_transparent_types_inplace(
         &mut self,
         library: &Library,
-        erased: &mut KnownErasedTypes,
+        eraser: &mut TransparentTypeEraser,
         _generics: &[GenericArgument],
     ) {
-        erased.erase_types_inplace(library, &mut self.ty, &[]);
+        eraser.erase_transparent_types_inplace(library, &mut self.ty, &[]);
     }
 
     fn add_dependencies(&self, library: &Library, out: &mut Dependencies) {

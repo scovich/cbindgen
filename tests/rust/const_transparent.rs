@@ -18,6 +18,15 @@ pub const BAR: TransparentTupleStruct = TransparentTupleStruct(0);
 pub const BAZ: Wrapper<TransparentStruct> = Wrapper { field: TransparentStruct { field: 0 } };
 
 #[repr(transparent)]
+struct TransparentStructWithErasedField<T> {
+    field: Wrapper<T>,
+}
+
+pub const BLAH: TransparentStructWithErasedField<TransparentStruct> = TransparentStructWithErasedField {
+    field: Wrapper { field: TransparentStruct { field: 0 } }
+};
+
+#[repr(transparent)]
 enum TransparentEnum {
     A { field: u8 },
 }

@@ -6,8 +6,8 @@ use crate::bindgen::config::Config;
 use crate::bindgen::declarationtyperesolver::DeclarationTypeResolver;
 use crate::bindgen::dependencies::Dependencies;
 use crate::bindgen::ir::{
-    AnnotationSet, Cfg, Documentation, GenericArgument, GenericParams, Item, ItemContainer,
-    KnownErasedTypes, Path, Type,
+    AnnotationSet, Cfg, Documentation, GenericArgument, GenericParams, Item, ItemContainer, Path,
+    TransparentTypeEraser, Type,
 };
 use crate::bindgen::library::Library;
 use crate::bindgen::mangle;
@@ -57,7 +57,11 @@ impl OpaqueItem {
         }
     }
 
-    pub fn try_erase_type(&self, generics: &[GenericArgument], _config: &Config) -> Option<Type> {
+    // Most transparent well-known types are registered as transparent typedefs at parsing
+    // time. Some well-known generic types can be transparent, but with type-specific semantics that
+    // cannot be captured by a simple transparent typedef. The parser registers them as opaque items
+    // to be handled here.
+    pub fn as_transparent_alias(&self, generics: &[GenericArgument]) -> Option<Type> {
         if let Some(GenericArgument::Type(ref ty)) = generics.first() {
             match self.name() {
                 "Option" => {
@@ -125,18 +129,13 @@ impl Item for OpaqueItem {
         Some(&self.generic_params)
     }
 
-    fn erase_types_inplace(
+    fn erase_transparent_types_inplace(
         &mut self,
         _library: &Library,
-        _erased: &mut KnownErasedTypes,
+        _erased: &mut TransparentTypeEraser,
         _generics: &[GenericArgument],
     ) {
-        // Nothing to do here, because we don't (transitively) embed any types and
-        // `Type::erased_types` takes care of erasing generic args for us.
-        warn!(
-            "Not attempting to erase opaque type {:?} with generics {:?}",
-            self, _generics
-        );
+        // Nothing to do here, because we don't reference any types.
     }
 
     fn rename_for_config(&mut self, config: &Config) {

@@ -8,7 +8,7 @@ use crate::bindgen::config::Config;
 use crate::bindgen::declarationtyperesolver::DeclarationTypeResolver;
 use crate::bindgen::dependencies::Dependencies;
 use crate::bindgen::ir::{
-    GenericArgument, GenericParams, GenericPath, ItemContainer, KnownErasedTypes, Path,
+    GenericArgument, GenericParams, GenericPath, ItemContainer, Path, TransparentTypeEraser,
 };
 use crate::bindgen::library::Library;
 use crate::bindgen::monomorph::Monomorphs;
@@ -559,13 +559,13 @@ impl Type {
     }
 
     #[must_use]
-    pub fn erase_types(
+    pub fn erase_transparent_types(
         &self,
         library: &Library,
         mappings: &[(&Path, &GenericArgument)],
-        erased: &mut KnownErasedTypes,
+        eraser: &mut TransparentTypeEraser,
     ) -> Option<Type> {
-        warn!("Type::erase_types for {:?}", self);
+        warn!("Type::erase_trasnparent_types for {:?}", self);
         match *self {
             Type::Ptr {
                 ref ty,
@@ -573,7 +573,7 @@ impl Type {
                 is_nullable,
                 is_ref,
             } => {
-                if let Some(erased_type) = erased.erase_types(library, ty, mappings) {
+                if let Some(erased_type) = eraser.erase_transparent_types(library, ty, mappings) {
                     return Some(Type::Ptr {
                         ty: Box::new(erased_type),
                         is_const,
@@ -597,7 +597,8 @@ impl Type {
                             .iter()
                             .map(|g| match g {
                                 GenericArgument::Type(ty) => {
-                                    let erased_ty = erased.erase_types(library, ty, mappings);
+                                    let erased_ty =
+                                        eraser.erase_transparent_types(library, ty, mappings);
                                     if erased_ty.is_some() {
                                         did_erase_generics = true;
                                         warn!("*** Erased generic {:?} as {:?}", ty, erased_ty);
@@ -608,24 +609,20 @@ impl Type {
                             })
                             .collect();
 
-                        // Process transparent types marked for erasure. Additionally, some of the
-                        // opaque standard types can be erased, given the right underlying type.
-                        let config = library.get_config();
-                        let erased_ty = match item {
-                            ItemContainer::OpaqueItem(o) => o.try_erase_type(&generics, config),
-                            ItemContainer::Typedef(t) => t.try_erase_type(&generics, config),
-                            ItemContainer::Struct(s) => s.try_erase_type(&generics, config),
-                            ItemContainer::Enum(e) => e.try_erase_type(&generics, config),
+                        // Replace transparent items with their underlying type and erase it.
+                        let aliased_ty = match item {
+                            ItemContainer::OpaqueItem(o) => o.as_transparent_alias(&generics),
+                            ItemContainer::Typedef(t) => t.as_transparent_alias(&generics),
+                            ItemContainer::Struct(s) => s.as_transparent_alias(&generics),
+                            ItemContainer::Enum(e) => e.as_transparent_alias(&generics),
                             _ => None,
                         };
-                        if erased_ty.is_some() {
-                            warn!(
-                                "Erased {:?} as {:?} with mappings {:?}",
-                                path, erased_ty, mappings
-                            );
-                            return erased_ty;
+                        if let Some(mut ty) = aliased_ty {
+                            warn!("Erased {:?} as {:?} with mappings {:?}", path, ty, mappings);
+                            eraser.erase_transparent_types_inplace(library, &mut ty, mappings);
+                            return Some(ty);
                         } else if did_erase_generics {
-                            // The path itself was not erased, but some of its generics were.
+                            // The type was not transparent, but some of its generics were erased.
                             let path = GenericPath::new(path.path().clone(), generics);
                             return Some(Type::Path(path));
                         }
@@ -636,7 +633,7 @@ impl Type {
             }
             Type::Primitive(..) => {} // cannot simplify further
             Type::Array(ref ty, ref constexpr) => {
-                if let Some(erased_ty) = erased.erase_types(library, ty, mappings) {
+                if let Some(erased_ty) = eraser.erase_transparent_types(library, ty, mappings) {
                     return Some(Type::Array(Box::new(erased_ty), constexpr.clone()));
                 }
             }
@@ -649,25 +646,25 @@ impl Type {
                 // Predict that ret+args will all be erased, but decrement the count whenever we're
                 // wrong. If the count drops to 0, then type erasure was a no-op after all.
                 let mut num_erased = 1 + args.len();
-                let erased_ret = erased
-                    .erase_types(library, ret, mappings)
+                let erased_ret = eraser
+                    .erase_transparent_types(library, ret, mappings)
                     .unwrap_or_else(|| {
                         num_erased -= 1;
                         ret.as_ref().clone()
                     });
 
-                let erased_args =
-                    args.iter()
-                        .map(|(name, ty)| {
-                            let erased_ty = erased
-                                .erase_types(library, ty, mappings)
-                                .unwrap_or_else(|| {
-                                    num_erased -= 1;
-                                    ty.clone()
-                                });
-                            (name.clone(), erased_ty)
-                        })
-                        .collect();
+                let erased_args = args
+                    .iter()
+                    .map(|(name, ty)| {
+                        let erased_ty = eraser
+                            .erase_transparent_types(library, ty, mappings)
+                            .unwrap_or_else(|| {
+                                num_erased -= 1;
+                                ty.clone()
+                            });
+                        (name.clone(), erased_ty)
+                    })
+                    .collect();
 
                 if num_erased > 0 {
                     return Some(Type::FuncPtr {

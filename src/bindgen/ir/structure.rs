@@ -11,8 +11,8 @@ use crate::bindgen::declarationtyperesolver::DeclarationTypeResolver;
 use crate::bindgen::dependencies::Dependencies;
 use crate::bindgen::ir::{
     AnnotationSet, Cfg, Constant, Documentation, Field, GenericArgument, GenericParams, Item,
-    ItemContainer, KnownErasedTypes, MaybeDefaultGenericAguments, Path, Repr, ReprAlign, ReprStyle,
-    Type, Typedef,
+    ItemContainer, MaybeDefaultGenericAguments, Path, Repr, ReprAlign, ReprStyle,
+    TransparentTypeEraser, Type, Typedef,
 };
 use crate::bindgen::library::Library;
 use crate::bindgen::mangle;
@@ -146,7 +146,7 @@ impl Struct {
     }
 
     /// Attempts to convert this struct to a typedef (only works for transparent structs).
-    pub fn as_transparent_typedef(&self) -> Option<Typedef> {
+    pub fn as_typedef(&self) -> Option<Typedef> {
         if self.is_transparent {
             // NOTE: A `#[repr(transparent)]` struct with 2+ NZT fields fails to compile, but 0
             // fields is allowed for some strange reason. Don't emit the typedef in that case.
@@ -162,10 +162,10 @@ impl Struct {
         None
     }
 
-    // Transparent structs become typedefs, so try converting to typedef erasing that.
-    pub fn try_erase_type(&self, generics: &[GenericArgument], config: &Config) -> Option<Type> {
-        self.as_transparent_typedef()
-            .and_then(|t| t.try_erase_type(generics, config))
+    // Transparent structs become typedefs, so try converting to typedef and recurse on that.
+    pub fn as_transparent_alias(&self, generics: &[GenericArgument]) -> Option<Type> {
+        self.as_typedef()
+            .and_then(|t| t.as_transparent_alias(generics))
     }
 
     pub fn add_monomorphs(&self, library: &Library, out: &mut Monomorphs) {
@@ -306,10 +306,10 @@ impl Item for Struct {
         Some(&self.generic_params)
     }
 
-    fn erase_types_inplace(
+    fn erase_transparent_types_inplace(
         &mut self,
         library: &Library,
-        erased: &mut KnownErasedTypes,
+        eraser: &mut TransparentTypeEraser,
         generics: &[GenericArgument],
     ) {
         let generics = MaybeDefaultGenericAguments::new(&self.generic_params, generics);
@@ -317,7 +317,7 @@ impl Item for Struct {
             .generic_params
             .call(self.path.name(), generics.as_slice());
         for field in &mut self.fields {
-            erased.erase_types_inplace(library, &mut field.ty, &mappings);
+            eraser.erase_transparent_types_inplace(library, &mut field.ty, &mappings);
         }
     }
 

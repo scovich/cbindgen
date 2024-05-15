@@ -520,7 +520,6 @@ impl Parse {
 
         // Well-known and always-erased types
         self.add_transparent_typedef("Cell", tpath.clone(), &["T"]);
-
         self.add_nonzero("NonZeroU8", IntKind::B8, false);
         self.add_nonzero("NonZeroU16", IntKind::B16, false);
         self.add_nonzero("NonZeroU32", IntKind::B32, false);
@@ -979,10 +978,7 @@ impl Parse {
     ) {
         match Struct::load(&config.layout, item, mod_cfg) {
             Ok(st) => {
-                info!(
-                    "Take {}::{}, transparent={}.",
-                    crate_name, &item.ident, st.is_transparent
-                );
+                info!("Take {}::{}.", crate_name, &item.ident);
                 self.structs.try_insert(st);
             }
             Err(msg) => {
@@ -1029,12 +1025,7 @@ impl Parse {
     ) {
         match Enum::load(item, mod_cfg, config) {
             Ok(en) => {
-                info!(
-                    "Take {}::{}, transparent={}.",
-                    crate_name,
-                    &item.ident,
-                    en.is_transparent()
-                );
+                info!("Take {}::{}.", crate_name, &item.ident);
                 self.enums.try_insert(en);
             }
             Err(msg) => {

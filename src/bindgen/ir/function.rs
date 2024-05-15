@@ -10,7 +10,7 @@ use crate::bindgen::config::{Config, Language};
 use crate::bindgen::declarationtyperesolver::DeclarationTypeResolver;
 use crate::bindgen::dependencies::Dependencies;
 use crate::bindgen::ir::{
-    AnnotationSet, Cfg, Documentation, GenericPath, KnownErasedTypes, Path, Type,
+    AnnotationSet, Cfg, Documentation, GenericPath, Path, TransparentTypeEraser, Type,
 };
 use crate::bindgen::library::Library;
 use crate::bindgen::monomorph::Monomorphs;
@@ -147,11 +147,15 @@ impl Function {
     }
 
     // NOTE: No `generics` arg because Functions do not support generics and do not `impl Item`.
-    pub fn erase_types_inplace(&mut self, library: &Library, erased: &mut KnownErasedTypes) {
-        erased.erase_types_inplace(library, &mut self.ret, &[]);
+    pub fn erase_transparent_types_inplace(
+        &mut self,
+        library: &Library,
+        eraser: &mut TransparentTypeEraser,
+    ) {
+        eraser.erase_transparent_types_inplace(library, &mut self.ret, &[]);
         for arg in &mut self.args {
             warn!("Before erasing types: {:?}", arg);
-            erased.erase_types_inplace(library, &mut arg.ty, &[]);
+            eraser.erase_transparent_types_inplace(library, &mut arg.ty, &[]);
             warn!("After erasing types: {:?}", arg);
         }
     }

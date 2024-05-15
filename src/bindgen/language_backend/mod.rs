@@ -139,14 +139,14 @@ pub trait LanguageBackend: Sized {
         }
     }
 
-    /// If the struct is transparent, emit a typedef of its NZT field type instead.
+    /// If the struct is transparent, emit a typedef of its NZST field type instead.
     fn write_struct_or_typedef<W: Write>(
         &mut self,
         out: &mut SourceWriter<W>,
         s: &Struct,
         b: &Bindings,
     ) {
-        if let Some(typedef) = s.as_transparent_typedef() {
+        if let Some(typedef) = s.as_typedef() {
             self.write_type_def(out, &typedef);
             for constant in &s.associated_constants {
                 out.new_line();
@@ -157,14 +157,14 @@ pub trait LanguageBackend: Sized {
         }
     }
 
-    /// If the struct is transparent, emit a typedef of its NZT field type instead.
+    /// If the struct is transparent, emit a typedef of its NZST field type instead.
     fn write_enum_or_typedef<W: Write>(
         &mut self,
         out: &mut SourceWriter<W>,
         e: &Enum,
         _b: &Bindings,
     ) {
-        if let Some(typedef) = e.as_transparent_typedef() {
+        if let Some(typedef) = e.as_typedef() {
             self.write_type_def(out, &typedef);
             // TODO: Associated constants are not supported for enums. Should they be? Rust
             // enum exports as a union, and C/C++ at least supports static union members?

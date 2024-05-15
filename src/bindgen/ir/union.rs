@@ -9,7 +9,7 @@ use crate::bindgen::declarationtyperesolver::DeclarationTypeResolver;
 use crate::bindgen::dependencies::Dependencies;
 use crate::bindgen::ir::{
     AnnotationSet, Cfg, Documentation, Field, GenericArgument, GenericParams, Item, ItemContainer,
-    KnownErasedTypes, MaybeDefaultGenericAguments, Path, Repr, ReprAlign, ReprStyle,
+    MaybeDefaultGenericAguments, Path, Repr, ReprAlign, ReprStyle, TransparentTypeEraser,
 };
 use crate::bindgen::library::Library;
 use crate::bindgen::mangle;
@@ -156,10 +156,10 @@ impl Item for Union {
         Some(&self.generic_params)
     }
 
-    fn erase_types_inplace(
+    fn erase_transparent_types_inplace(
         &mut self,
         library: &Library,
-        erased: &mut KnownErasedTypes,
+        eraser: &mut TransparentTypeEraser,
         generics: &[GenericArgument],
     ) {
         let generics = MaybeDefaultGenericAguments::new(&self.generic_params, generics);
@@ -167,7 +167,7 @@ impl Item for Union {
             .generic_params
             .call(self.path.name(), generics.as_slice());
         for field in &mut self.fields {
-            erased.erase_types_inplace(library, &mut field.ty, &mappings);
+            eraser.erase_transparent_types_inplace(library, &mut field.ty, &mappings);
         }
     }
 

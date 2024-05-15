@@ -11,8 +11,9 @@ use crate::bindgen::declarationtyperesolver::DeclarationTypeResolver;
 use crate::bindgen::dependencies::Dependencies;
 use crate::bindgen::ir::{
     AnnotationSet, AnnotationValue, Cfg, ConditionWrite, DeprecatedNoteKind, Documentation, Field,
-    GenericArgument, GenericParams, GenericPath, Item, ItemContainer, KnownErasedTypes, Literal,
-    MaybeDefaultGenericAguments, Path, Repr, ReprStyle, Struct, ToCondition, Type, Typedef,
+    GenericArgument, GenericParams, GenericPath, Item, ItemContainer, Literal,
+    MaybeDefaultGenericAguments, Path, Repr, ReprStyle, Struct, ToCondition, TransparentTypeEraser,
+    Type, Typedef,
 };
 use crate::bindgen::language_backend::LanguageBackend;
 use crate::bindgen::library::Library;
@@ -444,7 +445,7 @@ impl Enum {
     }
 
     /// Attempts to convert this enum to a typedef (only works for transparent enums).
-    pub fn as_transparent_typedef(&self) -> Option<Typedef> {
+    pub fn as_typedef(&self) -> Option<Typedef> {
         if self.is_transparent() {
             // NOTE: A `#[repr(transparent)]` enum fails to compile unless it has
             // exactly one NZT variant. So we can safely assume the variant exists.
@@ -462,10 +463,10 @@ impl Enum {
         None
     }
 
-    // Transparent enums become typedefs, so try converting to typedef erasing that.
-    pub fn try_erase_type(&self, generics: &[GenericArgument], config: &Config) -> Option<Type> {
-        self.as_transparent_typedef()
-            .and_then(|t| t.try_erase_type(generics, config))
+    // Transparent enums become typedefs, so try converting to typedef and recurse on that.
+    pub fn as_transparent_alias(&self, generics: &[GenericArgument]) -> Option<Type> {
+        self.as_typedef()
+            .and_then(|t| t.as_transparent_alias(generics))
     }
 }
 
@@ -525,25 +526,26 @@ impl Item for Enum {
         Some(&self.generic_params)
     }
 
-    fn erase_types_inplace(
+    fn erase_transparent_types_inplace(
         &mut self,
         library: &Library,
-        erased: &mut KnownErasedTypes,
+        eraser: &mut TransparentTypeEraser,
         generics: &[GenericArgument],
     ) {
-        let inline_tag_field = Self::inline_tag_field(&self.repr);
+        let mut skip_inline_tag_field = Self::inline_tag_field(&self.repr);
         let generics = MaybeDefaultGenericAguments::new(&self.generic_params, generics);
         let mappings = self
             .generic_params
             .call(self.path.name(), generics.as_slice());
         for variant in self.variants.iter_mut() {
             if let VariantBody::Body { ref mut body, .. } = variant.body {
-                for (i, field) in body.fields.iter_mut().enumerate() {
+                for field in body.fields.iter_mut() {
                     // Ignore the inline Tag field, if any (it's always first)
-                    if !inline_tag_field || i != 0 {
-                        erased.erase_types_inplace(library, &mut field.ty, &mappings);
-                    } else {
+                    if skip_inline_tag_field {
                         warn!("Skipping inline Tag field {:?}", field);
+                        skip_inline_tag_field = false;
+                    } else {
+                        eraser.erase_transparent_types_inplace(library, &mut field.ty, &mappings);
                     }
                 }
             }

@@ -14,7 +14,7 @@ use crate::bindgen::declarationtyperesolver::DeclarationTypeResolver;
 use crate::bindgen::dependencies::Dependencies;
 use crate::bindgen::ir::{
     AnnotationSet, Cfg, ConditionWrite, Documentation, GenericArgument, GenericParams, Item,
-    ItemContainer, KnownErasedTypes, Path, Struct, ToCondition, Type,
+    ItemContainer, Path, Struct, ToCondition, TransparentTypeEraser, Type,
 };
 use crate::bindgen::language_backend::LanguageBackend;
 use crate::bindgen::library::Library;
@@ -598,32 +598,16 @@ impl Item for Constant {
         None
     }
 
-    fn erase_types_inplace(
+    fn erase_transparent_types_inplace(
         &mut self,
         library: &Library,
-        erased: &mut KnownErasedTypes,
+        eraser: &mut TransparentTypeEraser,
         _generics: &[GenericArgument],
     ) {
-        if let Some(erased_ty) = erased.erase_types(library, &self.ty, &[]) {
-            // This constant's type is an erased transparent struct, so we need to simplify the
-            // initializer's literal to match; e.g. `pub const FOO: Transparent = Transparent { f:
-            // 42 }` should simplify to just `pub const FOO: Transparent = 42`.
-            let mut value = &self.value;
-            while let Literal::Struct { path, fields, .. } = value {
-                if !erased.is_erased(path) {
-                    break;
-                }
-                value = fields.iter().next().unwrap().1;
-            }
-            warn!(
-                "= = = Simplified {} literal {:?} to {:?}",
-                self.name(),
-                self.value,
-                value
-            );
-            self.value = value.clone();
-            self.ty = erased_ty;
-        }
+        // NOTE: We also need to simplify the literal initializer value to match the underlying
+        // type, but that is true for all transparent structs (not just transparent-typedef
+        // structs), and is handled by the `write` method below.
+        eraser.erase_transparent_types_inplace(library, &mut self.ty, &[]);
     }
 }
 

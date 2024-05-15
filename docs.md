@@ -129,7 +129,7 @@ If you ensure everything has a guaranteed repr, then cbindgen will generate defi
 * union
 * type
 * `[T; n]` (arrays always have a guaranteed C-compatible layout)
-* `&T`, `&mut T`, `*const T`, `*mut T`, `Option<&T>`, `Option<&mut T>`, `NonNull<T>`, `Option<NonNull<T>>`, `Box<T>`, `Option<Box<T>>` (all have the same pointer ABI, although their Rust semantics vary greatly)
+* `&T`, `&mut T`, `*const T`, `*mut T`, `Option<&T>`, `Option<&mut T>`, `NonNull<T>`, `Option<NonNull<T>>`, `Box<T>`, `Option<Box<T>>` (all have the same pointer ABI, although their Rust semantics can vary significantly)
 * `fn()`, Option<fn()> (as an actual function pointer)
 * `bitflags! { ... }` (if macro_expansion.bitflags is enabled)
 
@@ -282,7 +282,75 @@ fn bar() -> Foo { .. } // Will be emitted as `struct foo bar();`
 
 ### Struct Annotations
 
-* field-names=\[field1, field2, ...\] -- sets the names of all the fields in the output struct. These names will be output verbatim, and are not eligible for renaming.
+* field-names=\[field1, field2, ...\] -- sets the names of all the fields in the output
+  struct. These names will be output verbatim, and are not eligible for renaming.
+
+* transparent-typedef -- when emitting the typedef for a transparent struct, mark it as
+  transparent. All references to the struct will be replaced with the type of its underlying NZST
+  field, effectively making the struct invisible on the FFI side. For example, consider the
+  following Rust code:
+
+  ```rust
+  #[repr(transparent)]
+  pub struct Handle<T> {
+      ptr: NonNull<T>,
+  }
+
+  pub struct Foo { }
+
+  #[no_mangle]
+  pub extern "C" fn foo_operation(foo: Option<Handle<Foo>>) { }
+  ```
+
+  By default, the exported C++ code would fail to compile, because the function takes `Option<...>`
+  (which is an opaque type) by value:
+
+  ```cpp
+  template<typename T>
+  struct Option<T>;
+
+  template<typename T>
+  using Handle = T;
+
+  struct Foo;
+
+  void foo_operation(Option<Handle<Foo>> foo);
+  ```
+
+  If we annotate `Handle` with `transparent-typedef` (leaving the rest of the code unchanged):
+  ```rust
+  /// cbindgen:transparent-typedef
+  #[repr(transparent)]
+  pub struct Handle<T> {
+      ptr: NonNull<T>,
+  }
+
+  Then cbindgen is able to simplify the exported C++ code to just:
+  ```cpp
+  struct Foo;
+
+  void foo_operation(Foo* foo);
+  ```
+
+  NOTE: This annotation does _NOT_ affect user-defined type aliases for transparent structs. If we
+  we adjust the previous example to use a type alias:
+
+  ```rust
+  type NullableFooHandle = Option<Handle<Foo>>;
+
+  #[no_mangle]
+  pub extern "C" fn foo_operation(foo: NullableFooHandle) { }
+  ```
+
+  Then the exported code will use it as expected:
+
+  ```cpp
+  struct Foo;
+
+  using NullableFooHandle = Foo*;
+
+  void foo_operation(NullableFooHandle foo);
+  ```
 
 The rest are just local overrides for the same options found in the cbindgen.toml:
 
@@ -299,33 +367,39 @@ The rest are just local overrides for the same options found in the cbindgen.tom
   / etc(if any). The idea is for this to be used to annotate the operator with
   attributes, for example:
 
-```rust
-/// cbindgen:eq-attributes=MY_ATTRIBUTES
-#[repr(C)]
-pub struct Foo { .. }
-```
+  ```rust
+  /// cbindgen:eq-attributes=MY_ATTRIBUTES
+  #[repr(C)]
+  pub struct Foo { .. }
+  ```
 
-Will generate something like:
+  Will generate something like:
 
-```
-  MY_ATTRIBUTES bool operator==(const Foo& other) const {
-    ...
-  }
-```
+  ```
+    MY_ATTRIBUTES bool operator==(const Foo& other) const {
+      ...
+    }
+  ```
 
-Combined with something like:
+  Combined with something like:
 
-```
-#define MY_ATTRIBUTES [[nodiscard]]
-```
-
-for example.
+  ```
+  #define MY_ATTRIBUTES [[nodiscard]]
+  ```
 
 ### Enum Annotations
 
-* enum-trailing-values=\[variant1, variant2, ...\] -- add the following fieldless enum variants to the end of the enum's definition. These variant names *will* have the enum's renaming rules applied.
+* enum-trailing-values=\[variant1, variant2, ...\] -- add the following fieldless enum variants to
+  the end of the enum's definition. These variant names *will* have the enum's renaming rules
+  applied.
 
-WARNING: if any of these values are ever passed into Rust, behaviour will be Undefined. Rust does not know about them, and will assume they cannot happen.
+  WARNING: if any of these values are ever passed into Rust, behaviour will be Undefined. Rust does
+  not know about them, and will assume they cannot happen.
+
+* transparent-typedef -- when emitting the typedef for a transparent enum, mark it as
+  transparent. All references to the enum will be replaced with the type of its underlying NZST
+  variant field, effectively making the enum invisible on the FFI side. For exmaples of how this
+  works, see [Struct Annotations](#struct-annotations).
 
 The rest are just local overrides for the same options found in the cbindgen.toml:
 
@@ -810,57 +884,6 @@ deprecated_with_notes = "DEPRECATED_STRUCT_WITH_NOTE"
 #
 # default: false
 # associated_constants_in_body: false
-
-# Whether to replace a transparent struct with its underlying type instead of a typedef. Useful in
-# special cases where the emitted typedef is unhelpful, such as deeply nested or templated types.
-#
-# For example, given the following Rust code:
-#
-# ```rust
-# #[repr(transparent)]
-# pub struct Handle<T> {
-#     ptr: NonNull<T>,
-# }
-#
-# pub struct Foo { }
-#
-# #[no_mangle]
-# pub extern "C" fn foo_operation(foo: Option<Handle<Foo>>) { }
-# ```
-#
-# By default, the exported C++ code would fail to compile, because the function takes `Option`
-# (which is an opaque type) by value.
-#
-# With `replace_transparent_struct_with_underlying = true`, the code changes to just:
-#
-# ```cpp
-# struct Foo;
-#
-# void foo_operation(Foo* foo);
-# ```
-#
-# NOTE: This setting does _NOT_ disable user-defined type aliases for transparent structs.
-#
-# If we we adjust the previous example to use a type alias:
-# ```rust
-# type NullableFooHandle = Option<Handle<Foo>>;
-#
-# #[no_mangle]
-# pub extern "C" fn foo_operation(foo: Option<Handle<Foo>>) { }
-# ```
-#
-# Then the exported code will use it:
-#
-# ```cpp
-# struct Foo;
-#
-# using NullableFooHandle = Foo*
-#
-# void foo_operation(NullableFooHandle foo);
-# ```
-#
-# default: false
-replace_transparent_struct_with_underlying = false
 
 # Whether to derive a simple constructor that takes a value for every field.
 # default: false

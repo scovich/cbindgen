@@ -9,8 +9,8 @@ use crate::bindgen::config::Config;
 use crate::bindgen::declarationtyperesolver::DeclarationTypeResolver;
 use crate::bindgen::dependencies::Dependencies;
 use crate::bindgen::ir::{
-    AnnotationSet, Cfg, Constant, Documentation, Enum, GenericArgument, GenericParams,
-    KnownErasedTypes, OpaqueItem, Path, Static, Struct, Typedef, Union,
+    AnnotationSet, Cfg, Constant, Documentation, Enum, GenericArgument, GenericParams, OpaqueItem,
+    Path, Static, Struct, TransparentTypeEraser, Typedef, Union,
 };
 use crate::bindgen::library::Library;
 use crate::bindgen::monomorph::Monomorphs;
@@ -38,13 +38,13 @@ pub trait Item {
         unimplemented!()
     }
 
-    /// Erases all types internal to this item. Type erasure impacts typedefs and/or
-    /// `#[repr(transparent)]` types that were annotated with `cbindgen:erase_type`. It also impacts
-    /// certain built-in types (such as `Pin`, `NonNull`, `Box`)..
-    fn erase_types_inplace(
+    /// Recursively erases any transparent types this item references. Type erasure impacts typedefs
+    /// and/or `#[repr(transparent)]` types annotated with `cbindgen:transparent-typedef`. It also
+    /// impacts certain built-in types (such as `Box`, `Option`, `Pin`, and `NonNull`).
+    fn erase_transparent_types_inplace(
         &mut self,
         library: &Library,
-        erased: &mut KnownErasedTypes,
+        eraser: &mut TransparentTypeEraser,
         generics: &[GenericArgument],
     );
 

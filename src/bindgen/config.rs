@@ -341,8 +341,6 @@ pub struct ExportConfig {
     pub renaming_overrides_prefixing: bool,
     /// Mangling configuration.
     pub mangle: MangleConfig,
-    /// If true, treat typedefs as transparent (all uses replaced by the aliased underlying type).
-    pub transparent_typedefs: bool,
 }
 
 /// Mangling-specific configuration.
@@ -380,12 +378,6 @@ impl ExportConfig {
         if let Some(ref prefix) = self.prefix {
             item_name.insert_str(0, prefix);
         }
-    }
-    pub(crate) fn transparent_typedef(&self, annotations: &AnnotationSet) -> bool {
-        if let Some(x) = annotations.bool("transparent-typedef") {
-            return x;
-        }
-        self.transparent_typedefs
     }
 }
 
