@@ -331,7 +331,7 @@ impl ConstExpr {
 /// ```
 /// struct Wrapper<T, P> {
 ///     wrapped: T,
-///     _phantom: PhantomData<P>,
+///     _phantom: std::marker::PhantomData<P>,
 /// }
 /// ```
 ///
